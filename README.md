@@ -1,4 +1,4 @@
-# sans-pilot
+# SANS-pilot
 
 MCP server for SANS (Small-Angle Neutron Scattering) data analysis.
 
