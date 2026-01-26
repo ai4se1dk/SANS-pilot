@@ -4,16 +4,45 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import secrets
 import time
 from pathlib import Path
 from typing import Any, cast
 
 from fastmcp import FastMCP
+from fastmcp.server.auth.providers.debug import DebugTokenVerifier
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.utilities.types import Image
 from starlette.requests import Request
 
-mcp = FastMCP("sans-pilot")
+
+def _get_api_token() -> str | None:
+  """Get the API token from environment variables."""
+  return os.environ.get("API_TOKEN")
+
+
+def _validate_token(token: str) -> bool:
+  """Validate the bearer token using timing-safe comparison."""
+  expected_token = _get_api_token()
+  if not expected_token:
+    # No token configured, accept all tokens
+    return True
+  return secrets.compare_digest(token, expected_token)
+
+
+# Configure auth provider if token is set
+_api_token = _get_api_token()
+_auth_verifier = (
+  DebugTokenVerifier(
+    validate=_validate_token,
+    client_id="librechat",
+    scopes=["sans:read", "sans:write"],
+  )
+  if _api_token
+  else None
+)
+
+mcp = FastMCP("sans-pilot", auth=_auth_verifier)
 
 
 def _get_upload_dir() -> Path:
