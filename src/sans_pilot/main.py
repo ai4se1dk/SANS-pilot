@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import os
 import secrets
@@ -181,6 +182,15 @@ def list_templates() -> dict[str, str]:
   return result
 
 
+def _execute_template(name: str, parameters: dict[str, Any]) -> dict[str, Any]:
+  """Execute a template synchronously (runs in thread pool)."""
+  module = _load_template(name)
+  run_func = getattr(module, "run", None)
+  if not callable(run_func):
+    raise RuntimeError(f"Template '{name}' has no run() function")
+  return cast(dict[str, Any], run_func(**parameters))
+
+
 @mcp.tool(
   name="run-template",
   description=(
@@ -189,7 +199,7 @@ def list_templates() -> dict[str, str]:
     "Returns fit results and a plot image."
   ),
 )
-def run_template(
+async def run_template(
   name: str,
   parameters: dict[str, Any] | None = None,
 ) -> list[str | Image]:
@@ -211,15 +221,8 @@ def run_template(
   run_id = str(int(time.time() * 1000))
   parameters["output_dir"] = str(runs_dir / name.replace("/", "_") / run_id)
 
-  # Load and run template
-  module = _load_template(name)
-  run_func = getattr(module, "run", None)
-  if not callable(run_func):
-    raise RuntimeError(f"Template '{name}' has no run() function")
-
-  template_result = cast(dict[str, Any], run_func(**parameters))
-
-  print("Template result:", template_result)
+  # Run template in thread pool to avoid blocking the event loop
+  template_result = await asyncio.to_thread(_execute_template, name, parameters)
 
   return [template_result["fit"], Image(path=template_result["artifacts"]["plot"])]
 
