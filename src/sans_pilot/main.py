@@ -14,6 +14,7 @@ from fastmcp import FastMCP
 from fastmcp.server.auth.providers.debug import DebugTokenVerifier
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.utilities.types import Image
+from sans_fitter import SANSFitter
 from starlette.requests import Request
 
 
@@ -89,19 +90,19 @@ def _resolve_uploaded_path(path_or_name: str, user_id: str | None = None) -> Pat
   )
 
 
-def _templates_dir() -> Path:
-  return Path(__file__).parent / "templates"
+def _analyses_dir() -> Path:
+  return Path(__file__).parent / "analyses"
 
 
-def _load_template(template_name: str):
-  """Load a template module by name."""
-  template_path = _templates_dir() / f"{template_name}.py"
-  if not template_path.exists():
-    raise FileNotFoundError(f"Template not found: {template_name}")
+def _load_analysis(analysis_name: str):
+  """Load an analysis module by name."""
+  analysis_path = _analyses_dir() / f"{analysis_name}.py"
+  if not analysis_path.exists():
+    raise FileNotFoundError(f"Analysis not found: {analysis_name}")
 
-  spec = importlib.util.spec_from_file_location(template_name, template_path)
+  spec = importlib.util.spec_from_file_location(analysis_name, analysis_path)
   if spec is None or spec.loader is None:
-    raise RuntimeError(f"Failed to load template: {template_name}")
+    raise RuntimeError(f"Failed to load analysis: {analysis_name}")
 
   module = importlib.util.module_from_spec(spec)
   spec.loader.exec_module(module)
@@ -116,10 +117,38 @@ def describe_possibilities() -> str:
   """Describe server capabilities."""
   return (
     "This server can analyze SANS (Small Angle Neutron Scattering) data. "
-    "Use list-templates to see available analysis templates, "
-    "list-uploaded-files to find data files, "
-    "and run-template to execute an analysis."
+    "Available tools: "
+    "list-sans-models (see available models), "
+    "get-model-parameters (get parameter specs for a model), "
+    "list-analyses (see available analysis types), "
+    "list-uploaded-files (find data files), "
+    "run-analysis (execute an analysis and get fit results + plot)."
   )
+
+
+@mcp.tool(
+  name="list-sans-models",
+  description=("List available SANS models which can be used for fitting data."),
+)
+def list_sans_models():
+  from sasmodels import core
+
+  all_models = core.list_models()
+  return sorted(all_models)
+
+
+@mcp.tool(
+  name="get-model-parameters",
+  description=(
+    "Get parameters for a SANS model. "
+    "Returns dict of parameter names with their default value, min, max, and vary flag."
+  ),
+)
+def get_model_parameters(model_name: str):
+  fitter = SANSFitter()
+  fitter.set_model(model_name)
+
+  return fitter.params
 
 
 @mcp.tool(
@@ -164,46 +193,47 @@ def list_uploaded_files(
 
 
 @mcp.tool(
-  name="list-templates",
-  description="List available analysis templates with their parameters.",
+  name="list-analyses",
+  description="List available analysis types with their parameters.",
 )
-def list_templates() -> dict[str, str]:
-  """List available templates with descriptions."""
+def list_analyses() -> dict[str, str]:
+  """List available analyses with descriptions."""
   result = {}
-  for path in _templates_dir().glob("*.py"):
+  for path in _analyses_dir().glob("*.py"):
     if path.name.startswith("_"):
       continue
     name = path.stem
     try:
-      module = _load_template(name)
-      result[name] = getattr(module, "TEMPLATE_DESCRIPTION", "No description")
+      module = _load_analysis(name)
+      result[name] = getattr(module, "ANALYSIS_DESCRIPTION", "No description")
     except Exception:
       result[name] = "Failed to load description"
   return result
 
 
-def _execute_template(name: str, parameters: dict[str, Any]) -> dict[str, Any]:
-  """Execute a template synchronously (runs in thread pool)."""
-  module = _load_template(name)
+def _execute_analysis(name: str, parameters: dict[str, Any]) -> dict[str, Any]:
+  """Execute an analysis synchronously (runs in thread pool)."""
+  module = _load_analysis(name)
   run_func = getattr(module, "run", None)
   if not callable(run_func):
-    raise RuntimeError(f"Template '{name}' has no run() function")
+    raise RuntimeError(f"Analysis '{name}' has no run() function")
   return cast(dict[str, Any], run_func(**parameters))
 
 
 @mcp.tool(
-  name="run-template",
+  name="run-analysis",
   description=(
-    "Run a SANS analysis template. "
-    "Args: name (template id), parameters (dict with input_csv and template-specific options). "
+    "Run a SANS analysis. "
+    "Args: name (analysis id from list-analyses), "
+    "parameters (dict with input_csv and analysis-specific options like model, engine, param_overrides). "
     "Returns fit results and a plot image."
   ),
 )
-async def run_template(
+async def run_analysis(
   name: str,
   parameters: dict[str, Any] | None = None,
 ) -> list[str | Image]:
-  """Run a template and return fit results with plot."""
+  """Run an analysis and return fit results with plot."""
 
   parameters = parameters or {}
 
@@ -221,10 +251,10 @@ async def run_template(
   run_id = str(int(time.time() * 1000))
   parameters["output_dir"] = str(runs_dir / name.replace("/", "_") / run_id)
 
-  # Run template in thread pool to avoid blocking the event loop
-  template_result = await asyncio.to_thread(_execute_template, name, parameters)
+  # Run analysis in thread pool to avoid blocking the event loop
+  analysis_result = await asyncio.to_thread(_execute_analysis, name, parameters)
 
-  return [template_result["fit"], Image(path=template_result["artifacts"]["plot"])]
+  return [analysis_result["fit"], Image(path=analysis_result["artifacts"]["plot"])]
 
 
 def main() -> None:
