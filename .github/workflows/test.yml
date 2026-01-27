@@ -1,0 +1,39 @@
+name: Test MCP Endpoints
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    name: Test MCP endpoints
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -f Dockerfile.dev -t sans-pilot .
+
+      - name: Start sans-pilot container
+        run: |
+          docker run -d --name sans-pilot \
+            -p 8001:8001 \
+            -v ${{ github.workspace }}/test/simulated_sans_data.csv:/uploads/simulated_sans_data.csv \
+            sans-pilot
+          # Wait for server to be ready
+          sleep 10
+
+      - name: Run endpoint tests
+        run: |
+          chmod +x test/test_endpoints.sh
+          test/test_endpoints.sh http://localhost:8001
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs sans-pilot
+
+      - name: Stop container
+        if: always()
+        run: docker stop sans-pilot || true

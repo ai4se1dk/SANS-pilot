@@ -55,31 +55,59 @@ echo "2. describe-possibilities"
 mcp_call 2 "tools/call" '{"name":"describe-possibilities","arguments":{}}' | jq .
 echo
 
-# Test list-templates
-echo "3. list-templates"
-mcp_call 3 "tools/call" '{"name":"list-templates","arguments":{}}' | jq .
+# Test list-sans-models
+echo "3. list-sans-models"
+mcp_call 3 "tools/call" '{"name":"list-sans-models","arguments":{}}' | jq .
+echo
+
+# Test get-model-parameters
+echo "4. get-model-parameters (cylinder)"
+mcp_call 4 "tools/call" '{"name":"get-model-parameters","arguments":{"model_name":"cylinder"}}' | jq .
+echo
+
+# Test list-analyses
+echo "5. list-analyses"
+mcp_call 5 "tools/call" '{"name":"list-analyses","arguments":{}}' | jq .
 echo
 
 # Test list-uploaded-files
-echo "4. list-uploaded-files"
-mcp_call 4 "tools/call" '{"name":"list-uploaded-files","arguments":{"extensions":["csv"]}}' | jq .
+echo "6. list-uploaded-files"
+mcp_call 6 "tools/call" '{"name":"list-uploaded-files","arguments":{"extensions":["csv"]}}' | jq .
 echo
 
-# Test run-template using an uploaded file
-echo "5. run-template (fitting-with-cylinder-model)"
-# Get first CSV file from list-uploaded-files
-CSV_FILE=$(mcp_call 5 "tools/call" '{"name":"list-uploaded-files","arguments":{"extensions":["csv"],"limit":1}}' | jq -r '.result.structuredContent.result[0].relative_path // empty')
+# Get first CSV file for run-template tests
+CSV_FILE=$(mcp_call 7 "tools/call" '{"name":"list-uploaded-files","arguments":{"extensions":["csv"],"limit":1}}' | jq -r '.result.content[0].text | fromjson | .[0].relative_path // empty')
 
+# Get cylinder model parameters for param_overrides
+echo "7. Fetching cylinder model parameters for run-analysis"
+PARAMS_RESPONSE=$(mcp_call 8 "tools/call" '{"name":"get-model-parameters","arguments":{"model_name":"cylinder"}}')
+# Extract the text content and parse as JSON
+CYLINDER_PARAMS=$(echo "$PARAMS_RESPONSE" | jq -c '.result.content[0].text | fromjson // {}')
+# Set vary=true for key fitting parameters and remove 'description' field (not accepted by set_param)
+CYLINDER_PARAMS=$(echo "$CYLINDER_PARAMS" | jq -c '
+  walk(if type == "object" then del(.description) else . end) |
+  .radius.vary = true |
+  .length.vary = true |
+  .scale.vary = true |
+  .background.vary = true
+')
+echo "   Model parameters (filtered + vary=true): $CYLINDER_PARAMS"
+echo
+
+# Test run-analysis with fitting-with-custom-model using fetched parameters
+echo "8. run-analysis (fitting-with-custom-model, cylinder)"
 if [ -n "$CSV_FILE" ]; then
   echo "   Using file: $CSV_FILE"
-  mcp_call 6 "tools/call" "{
-    \"name\":\"run-template\",
+  mcp_call 9 "tools/call" "{
+    \"name\":\"run-analysis\",
     \"arguments\":{
-      \"name\":\"fitting-with-cylinder-model\",
+      \"name\":\"fitting-with-custom-model\",
       \"parameters\":{
         \"input_csv\":\"$CSV_FILE\",
+        \"model\":\"cylinder\",
         \"engine\":\"bumps\",
-        \"method\":\"amoeba\"
+        \"method\":\"amoeba\",
+        \"param_overrides\":$CYLINDER_PARAMS
       }
     }
   }" | jq .
