@@ -200,5 +200,118 @@ echo
 #   echo "   SKIPPED - no CSV files found in uploads"
 # fi
 
+# ============================================
+# Structure Factor Tools Tests
+# ============================================
+
+# Test list-structure-factors
+echo "13. list-structure-factors"
+mcp_call 14 "tools/call" '{"name":"list-structure-factors","arguments":{}}' | jq .
 echo
+
+# Test get-structure-factor-parameters (sphere@hardsphere)
+echo "14. get-structure-factor-parameters (sphere@hardsphere)"
+mcp_call 15 "tools/call" '{"name":"get-structure-factor-parameters","arguments":{"form_factor":"sphere","structure_factor":"hardsphere"}}' | jq .
+echo
+
+# Test get-structure-factor-parameters (sphere@hayter_msa)
+echo "15. get-structure-factor-parameters (sphere@hayter_msa)"
+mcp_call 16 "tools/call" '{"name":"get-structure-factor-parameters","arguments":{"form_factor":"sphere","structure_factor":"hayter_msa"}}' | jq .
+echo
+
+# Get sphere model parameters for structure factor tests
+echo "16. Fetching sphere model parameters for structure factor tests"
+SPHERE_PARAMS_RESPONSE=$(mcp_call 17 "tools/call" '{"name":"get-model-parameters","arguments":{"model_name":"sphere"}}')
+SPHERE_PARAMS=$(echo "$SPHERE_PARAMS_RESPONSE" | jq -c '.result.content[0].text | fromjson // {}')
+SPHERE_PARAMS=$(echo "$SPHERE_PARAMS" | jq -c '
+  walk(if type == "object" then del(.description) else . end) |
+  .radius.vary = true |
+  .scale.vary = true |
+  .background.vary = true
+')
+echo "   Sphere parameters (filtered + vary=true): $SPHERE_PARAMS"
+echo
+
+# Test run-analysis with hardsphere structure factor
+echo "17. run-analysis with structure factor (sphere@hardsphere)"
+if [ -n "$CSV_FILE" ]; then
+  echo "   Using file: $CSV_FILE"
+  mcp_call 18 "tools/call" "{
+    \"name\":\"run-analysis\",
+    \"arguments\":{
+      \"name\":\"fitting-with-custom-model\",
+      \"parameters\":{
+        \"input_csv\":\"$CSV_FILE\",
+        \"model\":\"sphere\",
+        \"engine\":\"bumps\",
+        \"method\":\"amoeba\",
+        \"param_overrides\":$SPHERE_PARAMS,
+        \"structure_factor\":\"hardsphere\",
+        \"structure_factor_params\":{
+          \"volfraction\":{\"value\":0.2,\"min\":0.0,\"max\":0.6,\"vary\":true},
+          \"radius_effective\":{\"value\":50,\"min\":10,\"max\":100,\"vary\":true}
+        }
+      }
+    }
+  }" | jq .
+else
+  echo "   SKIPPED - no CSV files found in uploads"
+fi
+echo
+
+# Test run-analysis with structure factor and link_radius mode
+echo "18. run-analysis with structure factor + link_radius mode (sphere@hardsphere)"
+if [ -n "$CSV_FILE" ]; then
+  echo "   Using file: $CSV_FILE"
+  mcp_call 19 "tools/call" "{
+    \"name\":\"run-analysis\",
+    \"arguments\":{
+      \"name\":\"fitting-with-custom-model\",
+      \"parameters\":{
+        \"input_csv\":\"$CSV_FILE\",
+        \"model\":\"sphere\",
+        \"engine\":\"bumps\",
+        \"method\":\"amoeba\",
+        \"param_overrides\":$SPHERE_PARAMS,
+        \"structure_factor\":\"hardsphere\",
+        \"structure_factor_params\":{
+          \"volfraction\":{\"value\":0.2,\"min\":0.0,\"max\":0.6,\"vary\":true}
+        },
+        \"radius_effective_mode\":\"link_radius\"
+      }
+    }
+  }" | jq .
+else
+  echo "   SKIPPED - no CSV files found in uploads"
+fi
+echo
+
+# Test run-analysis with hayter_msa structure factor (charged spheres)
+echo "19. run-analysis with charged sphere structure factor (sphere@hayter_msa)"
+if [ -n "$CSV_FILE" ]; then
+  echo "   Using file: $CSV_FILE"
+  mcp_call 20 "tools/call" "{
+    \"name\":\"run-analysis\",
+    \"arguments\":{
+      \"name\":\"fitting-with-custom-model\",
+      \"parameters\":{
+        \"input_csv\":\"$CSV_FILE\",
+        \"model\":\"sphere\",
+        \"engine\":\"bumps\",
+        \"method\":\"amoeba\",
+        \"param_overrides\":$SPHERE_PARAMS,
+        \"structure_factor\":\"hayter_msa\",
+        \"structure_factor_params\":{
+          \"volfraction\":{\"value\":0.2,\"min\":0.0,\"max\":0.6,\"vary\":true},
+          \"radius_effective\":{\"value\":50,\"min\":10,\"max\":100,\"vary\":true},
+          \"charge\":{\"value\":10,\"min\":0,\"max\":100,\"vary\":true}
+        }
+      }
+    }
+  }" | jq .
+else
+  echo "   SKIPPED - no CSV files found in uploads"
+fi
+echo
+
 echo "=== Done ==="

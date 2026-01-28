@@ -1,19 +1,21 @@
 # SANS-pilot
 
-MCP server for SANS (Small-Angle Neutron Scattering) data analysis.
+MCP server for SANS (Small-Angle Neutron Scattering) data analysis, powered by [SANS-fitter](https://github.com/ai4se1dk/SANS-fitter).
 
 ## Tools
 
-| Tool                          | Description                                                                  |
-| ----------------------------- | ---------------------------------------------------------------------------- |
-| `describe-possibilities`      | Describe server capabilities                                                 |
-| `list-sans-models`            | List available sasmodels for fitting (e.g., cylinder, sphere, ellipsoid)     |
-| `get-model-parameters`        | Get parameter specs for a model (value, min, max, vary, description)         |
-| `get-polydisperse-parameters` | Get parameters that support polydispersity for a model                       |
-| `get-polydispersity-options`  | Get available PD distribution types (gaussian, lognormal, etc.) and defaults |
-| `list-uploaded-files`         | List uploaded data files (optional: filter by extension, limit)              |
-| `list-analyses`               | List available analysis types with parameters                                |
-| `run-analysis`                | Run analysis, returns fit results and plot                                   |
+| Tool                              | Description                                                                  |
+| --------------------------------- | ---------------------------------------------------------------------------- |
+| `describe-possibilities`          | Describe server capabilities                                                 |
+| `list-sans-models`                | List available sasmodels for fitting (e.g., cylinder, sphere, ellipsoid)     |
+| `get-model-parameters`            | Get parameter specs for a model (value, min, max, vary, description)         |
+| `list-structure-factors`          | List available structure factors for inter-particle interactions             |
+| `get-structure-factor-parameters` | Get parameters for a form_factor@structure_factor product model              |
+| `get-polydisperse-parameters`     | Get parameters that support polydispersity for a model                       |
+| `get-polydispersity-options`      | Get available PD distribution types (gaussian, lognormal, etc.) and defaults |
+| `list-uploaded-files`             | List uploaded data files (optional: filter by extension, limit)              |
+| `list-analyses`                   | List available analysis types with parameters                                |
+| `run-analysis`                    | Run analysis, returns fit results and plot                                   |
 
 ## Typical Workflow
 
@@ -78,6 +80,42 @@ Use `get-polydisperse-parameters` to see which parameters support size distribut
 - `pd_n`: Number of quadrature points (higher = more accurate, slower)
 - `pd_nsigma`: Number of standard deviations to include
 - `vary`: Whether to fit the pd_width during optimization
+
+### Example: Fitting with structure factors
+
+Structure factors model inter-particle interactions in concentrated systems. Use `list-structure-factors` to see available options:
+
+- `hardsphere` - Hard sphere (Percus-Yevick closure)
+- `hayter_msa` - Hayter-Penfold MSA for charged spheres
+- `squarewell` - Square well potential
+- `stickyhardsphere` - Sticky hard sphere (Baxter model)
+
+```json
+{
+  "name": "fitting-with-custom-model",
+  "parameters": {
+    "input_csv": "simulated_sans_data.csv",
+    "model": "sphere",
+    "engine": "bumps",
+    "method": "amoeba",
+    "param_overrides": {
+      "radius": { "value": 50, "min": 10, "max": 100, "vary": true },
+      "scale": { "value": 0.01, "vary": true },
+      "background": { "value": 0.001, "vary": true }
+    },
+    "structure_factor": "hardsphere",
+    "structure_factor_params": {
+      "volfraction": { "value": 0.2, "min": 0.0, "max": 0.6, "vary": true },
+      "radius_effective": { "value": 50, "min": 10, "max": 100, "vary": true }
+    }
+  }
+}
+```
+
+**Structure factor options:**
+- `structure_factor`: Name of the structure factor
+- `structure_factor_params`: Parameter overrides (volfraction, radius_effective, charge for hayter_msa)
+- `radius_effective_mode`: `"unconstrained"` (default) or `"link_radius"` to constrain radius_effective to equal the form factor radius
 
 ## Authentication
 
