@@ -120,6 +120,8 @@ def describe_possibilities() -> str:
     "Available tools: "
     "list-sans-models (see available models), "
     "get-model-parameters (get parameter specs for a model), "
+    "list-structure-factors (see available structure factors for inter-particle interactions), "
+    "get-structure-factor-parameters (get params for form_factor@structure_factor product model), "
     "get-polydisperse-parameters (see which params support polydispersity), "
     "get-polydispersity-options (get PD distribution types and defaults), "
     "list-analyses (see available analysis types), "
@@ -150,6 +152,41 @@ def get_model_parameters(model_name: str):
   fitter = SANSFitter()
   fitter.set_model(model_name)
 
+  return fitter.params
+
+
+@mcp.tool(
+  name="list-structure-factors",
+  description=(
+    "List available structure factors for modeling inter-particle interactions. "
+    "Structure factors are essential for concentrated systems where particle interactions affect scattering."
+  ),
+)
+def list_structure_factors() -> dict[str, str]:
+  """List supported structure factors with descriptions."""
+  return {
+    "hardsphere": "Hard sphere structure factor (Percus-Yevick closure) - for non-interacting hard spheres",
+    "hayter_msa": "Hayter-Penfold rescaled MSA - for charged spheres with Coulombic interactions",
+    "squarewell": "Square well potential - for particles with short-range attraction",
+    "stickyhardsphere": "Sticky hard sphere (Baxter model) - for particles with very short-range attraction",
+  }
+
+
+@mcp.tool(
+  name="get-structure-factor-parameters",
+  description=(
+    "Get parameters for a form_factor@structure_factor product model. "
+    "Returns combined parameters from both form factor and structure factor."
+  ),
+)
+def get_structure_factor_parameters(
+  form_factor: str,
+  structure_factor: str,
+) -> dict[str, Any]:
+  """Get parameters for a product model (form_factor@structure_factor)."""
+  fitter = SANSFitter()
+  fitter.set_model(form_factor)
+  fitter.set_structure_factor(structure_factor)
   return fitter.params
 
 

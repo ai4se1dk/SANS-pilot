@@ -12,11 +12,16 @@ ANALYSIS_DESCRIPTION = (
   "Fit SANS data using a specified model from sasmodels. "
   "Use list-sans-models to see available models, "
   "get-model-parameters to get parameter specs, "
+  "list-structure-factors to see available structure factors, "
+  "get-structure-factor-parameters to get params for product models, "
   "get-polydisperse-parameters to see which params support polydispersity. "
   "Parameters: "
   "input_csv (str, required), "
   "model (str, required), "
   "param_overrides (dict, required) - model parameters with value/min/max/vary (set vary=true for params to fit), "
+  "structure_factor (str, optional) - structure factor name (hardsphere, hayter_msa, squarewell, stickyhardsphere), "
+  "structure_factor_params (dict, optional) - structure factor params like volfraction, radius_effective, charge, "
+  "radius_effective_mode (str, optional) - 'unconstrained' (default) or 'link_radius' to tie radius_effective to form factor radius, "
   "polydispersity (dict, optional) - PD config per param with pd_width/pd_type/pd_n/pd_nsigma/vary, "
   "engine (bumps|lmfit, default: bumps), "
   "method (str, default: amoeba), "
@@ -30,6 +35,9 @@ def run(
   output_dir: str | Path,
   model: str,
   param_overrides: dict[str, dict[str, Any]],
+  structure_factor: str | None = None,
+  structure_factor_params: dict[str, dict[str, Any]] | None = None,
+  radius_effective_mode: Literal["unconstrained", "link_radius"] = "unconstrained",
   polydispersity: dict[str, dict[str, Any]] | None = None,
   engine: Literal["bumps", "lmfit"] = "bumps",
   method: str | None = "amoeba",
@@ -42,6 +50,9 @@ def run(
     output_dir: Directory for output artifacts.
     model: Name of the SANS model to use.
     param_overrides: Model parameters (value/min/max/vary). Set vary=true for params to fit.
+    structure_factor: Optional structure factor name (hardsphere, hayter_msa, squarewell, stickyhardsphere).
+    structure_factor_params: Optional structure factor parameter overrides (volfraction, radius_effective, charge).
+    radius_effective_mode: How to handle radius_effective. 'unconstrained' (default) or 'link_radius'.
     polydispersity: PD configuration per parameter. Keys are param names, values are dicts
       with pd_width, pd_type, pd_n, pd_nsigma, vary. Example:
       {"radius": {"pd_width": 0.1, "pd_type": "gaussian", "vary": False}}
@@ -70,6 +81,29 @@ def run(
 
   # Set model
   fitter.set_model(model)
+
+  # Apply structure factor if specified
+  if structure_factor:
+    fitter.set_structure_factor(
+      structure_factor, radius_effective_mode=radius_effective_mode
+    )
+    print(
+      f"Applied structure factor: {structure_factor} (radius_effective_mode={radius_effective_mode})"
+    )
+
+    # Apply structure factor parameter overrides
+    if structure_factor_params:
+      allowed_keys = {"value", "min", "max", "vary"}
+      for param_name, overrides in structure_factor_params.items():
+        if param_name in fitter.params:
+          filtered = {k: v for k, v in overrides.items() if k in allowed_keys}
+          if filtered:
+            fitter.set_param(param_name, **filtered)
+            print(f"Set structure factor param '{param_name}': {filtered}")
+        else:
+          print(
+            f"Warning: structure factor param '{param_name}' not in model, skipping"
+          )
 
   # Apply parameter overrides
   # Keys that SANSFitter.set_param() accepts
