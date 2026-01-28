@@ -3,110 +3,43 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import os
-import secrets
 import time
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.debug import DebugTokenVerifier
-from fastmcp.server.dependencies import get_http_request
 from fastmcp.utilities.types import Image
 from sans_fitter import SANSFitter
-from starlette.requests import Request
 
-
-def _get_api_token() -> str | None:
-  """Get the API token from environment variables."""
-  return os.environ.get("API_TOKEN")
-
-
-def _validate_token(token: str) -> bool:
-  """Validate the bearer token using timing-safe comparison."""
-  expected_token = _get_api_token()
-  if not expected_token:
-    # No token configured, accept all tokens
-    return True
-  return secrets.compare_digest(token, expected_token)
-
-
-# Configure auth provider if token is set
-_api_token = _get_api_token()
-_auth_verifier = (
-  DebugTokenVerifier(
-    validate=_validate_token,
-    client_id="librechat",
-    scopes=["sans:read", "sans:write"],
-  )
-  if _api_token
-  else None
+from sans_pilot.analysis_loader import execute_analysis, get_analyses_dir, load_analysis
+from sans_pilot.auth import create_auth_verifier
+from sans_pilot.files import (
+  get_uploads_dir,
+  get_user_id_from_request,
+  resolve_uploaded_path,
 )
 
-mcp = FastMCP("sans-pilot", auth=_auth_verifier)
+mcp = FastMCP(
+  "sans-pilot",
+  auth=create_auth_verifier(),
+  instructions="""
+SANS (Small-Angle Neutron Scattering) data analysis server.
 
+## Workflow
+1. `list-uploaded-files` - Find user's CSV data files
+2. `list-sans-models` - Show available models (cylinder, sphere, ellipsoid, etc.)
+3. `get-model-parameters` - Get parameter specs for a model
+4. `run-analysis` - Execute fitting with model, param_overrides, and optional structure_factor/polydispersity
 
-def _get_upload_dir() -> Path:
-  return Path(os.environ.get("UPLOAD_DIR", "/uploads"))
+## Key Tools
+- `list-structure-factors` / `get-structure-factor-parameters` - For concentrated samples with particle interactions
+- `get-polydisperse-parameters` / `get-polydispersity-options` - For size distributions
 
-
-def _get_uploads_dir(user_id: str | None = None) -> Path:
-  data_dir = _get_upload_dir()
-  if user_id:
-    return data_dir / user_id
-  return data_dir
-
-
-def _get_user_id_from_request() -> str | None:
-  request: Request = get_http_request()
-  return request.headers.get("x-user-id")
-
-
-def _resolve_uploaded_path(path_or_name: str, user_id: str | None = None) -> Path:
-  p = Path(path_or_name)
-  if p.is_absolute():
-    return p
-
-  uploads_dir = _get_uploads_dir(user_id)
-
-  # Direct relative path within uploads dir
-  direct_path = uploads_dir / p
-  if direct_path.exists():
-    return direct_path
-
-  # Search by filename
-  matches = [match for match in uploads_dir.rglob(p.name) if match.is_file()]
-  if len(matches) == 1:
-    return matches[0]
-  if len(matches) > 1:
-    raise ValueError(
-      f"Ambiguous filename '{p.name}' (found {len(matches)} matches). "
-      "Use the full relative path returned by list-uploaded-files."
-    )
-
-  raise FileNotFoundError(
-    f"Uploaded file '{path_or_name}' not found under {uploads_dir}"
-  )
-
-
-def _analyses_dir() -> Path:
-  return Path(__file__).parent / "analyses"
-
-
-def _load_analysis(analysis_name: str):
-  """Load an analysis module by name."""
-  analysis_path = _analyses_dir() / f"{analysis_name}.py"
-  if not analysis_path.exists():
-    raise FileNotFoundError(f"Analysis not found: {analysis_name}")
-
-  spec = importlib.util.spec_from_file_location(analysis_name, analysis_path)
-  if spec is None or spec.loader is None:
-    raise RuntimeError(f"Failed to load analysis: {analysis_name}")
-
-  module = importlib.util.module_from_spec(spec)
-  spec.loader.exec_module(module)
-  return module
+## Fitting Tips
+- Set `vary: true` for parameters to optimize (radius, length, scale, background)
+""",
+)
 
 
 @mcp.tool(
@@ -244,8 +177,8 @@ def list_uploaded_files(
   limit: int = 50,
 ) -> list[dict[str, Any]]:
   """List uploaded files, optionally filtered by extension."""
-  user_id = _get_user_id_from_request()
-  uploads_dir = _get_uploads_dir(user_id)
+  user_id = get_user_id_from_request()
+  uploads_dir = get_uploads_dir(user_id)
   extensions_norm = None
   if extensions:
     extensions_norm = {e.lower().lstrip(".") for e in extensions}
@@ -280,25 +213,16 @@ def list_uploaded_files(
 def list_analyses() -> dict[str, str]:
   """List available analyses with descriptions."""
   result = {}
-  for path in _analyses_dir().glob("*.py"):
+  for path in get_analyses_dir().glob("*.py"):
     if path.name.startswith("_"):
       continue
     name = path.stem
     try:
-      module = _load_analysis(name)
+      module = load_analysis(name)
       result[name] = getattr(module, "ANALYSIS_DESCRIPTION", "No description")
     except Exception:
       result[name] = "Failed to load description"
   return result
-
-
-def _execute_analysis(name: str, parameters: dict[str, Any]) -> dict[str, Any]:
-  """Execute an analysis synchronously (runs in thread pool)."""
-  module = _load_analysis(name)
-  run_func = getattr(module, "run", None)
-  if not callable(run_func):
-    raise RuntimeError(f"Analysis '{name}' has no run() function")
-  return cast(dict[str, Any], run_func(**parameters))
 
 
 @mcp.tool(
@@ -321,9 +245,9 @@ async def run_analysis(
   # Resolve input file path if provided
   input_csv = parameters.get("input_csv")
   if isinstance(input_csv, str) and input_csv.strip():
-    user_id = _get_user_id_from_request()
+    user_id = get_user_id_from_request()
     parameters["input_csv"] = str(
-      _resolve_uploaded_path(input_csv.strip(), user_id=user_id)
+      resolve_uploaded_path(input_csv.strip(), user_id=user_id)
     )
 
   # Create output directory
@@ -333,13 +257,12 @@ async def run_analysis(
   parameters["output_dir"] = str(runs_dir / name.replace("/", "_") / run_id)
 
   # Run analysis in thread pool to avoid blocking the event loop
-  analysis_result = await asyncio.to_thread(_execute_analysis, name, parameters)
+  analysis_result = await asyncio.to_thread(execute_analysis, name, parameters)
 
   return [analysis_result["fit"], Image(path=analysis_result["artifacts"]["plot"])]
 
 
 def main() -> None:
-  """Start the MCP server."""
   mcp.run()
 
 
