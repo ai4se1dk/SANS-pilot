@@ -114,6 +114,91 @@ if [ -n "$CSV_FILE" ]; then
 else
   echo "   SKIPPED - no CSV files found in uploads"
 fi
+echo
+
+# ============================================
+# Polydispersity Tools Tests
+# ============================================
+
+# Test get-polydispersity-options
+echo "9. get-polydispersity-options"
+mcp_call 10 "tools/call" '{"name":"get-polydispersity-options","arguments":{}}' | jq .
+echo
+
+# Test get-polydisperse-parameters for cylinder model
+echo "10. get-polydisperse-parameters (cylinder)"
+mcp_call 11 "tools/call" '{"name":"get-polydisperse-parameters","arguments":{"model_name":"cylinder"}}' | jq .
+echo
+
+# Test get-polydisperse-parameters for sphere model
+echo "11. get-polydisperse-parameters (sphere)"
+mcp_call 12 "tools/call" '{"name":"get-polydisperse-parameters","arguments":{"model_name":"sphere"}}' | jq .
+echo
+
+# Test run-analysis with polydispersity enabled
+echo "12. run-analysis with polydispersity (cylinder, 10% gaussian PD on radius)"
+if [ -n "$CSV_FILE" ]; then
+  echo "   Using file: $CSV_FILE"
+  mcp_call 13 "tools/call" "{
+    \"name\":\"run-analysis\",
+    \"arguments\":{
+      \"name\":\"fitting-with-custom-model\",
+      \"parameters\":{
+        \"input_csv\":\"$CSV_FILE\",
+        \"model\":\"cylinder\",
+        \"engine\":\"bumps\",
+        \"method\":\"amoeba\",
+        \"param_overrides\":$CYLINDER_PARAMS,
+        \"polydispersity\":{
+          \"radius\":{
+            \"pd_width\":0.1,
+            \"pd_type\":\"gaussian\",
+            \"pd_n\":10,
+            \"vary\":false
+          }
+        }
+      }
+    }
+  }" | jq .
+else
+  echo "   SKIPPED - no CSV files found in uploads"
+fi
+echo
+
+# Test run-analysis with polydispersity on multiple parameters
+# echo "13. run-analysis with multi-param polydispersity (cylinder, PD on radius + length)"
+# if [ -n "$CSV_FILE" ]; then
+#   echo "   Using file: $CSV_FILE"
+#   mcp_call 14 "tools/call" "{
+#     \"name\":\"run-analysis\",
+#     \"arguments\":{
+#       \"name\":\"fitting-with-custom-model\",
+#       \"parameters\":{
+#         \"input_csv\":\"$CSV_FILE\",
+#         \"model\":\"cylinder\",
+#         \"engine\":\"bumps\",
+#         \"method\":\"amoeba\",
+#         \"param_overrides\":$CYLINDER_PARAMS,
+#         \"polydispersity\":{
+#           \"radius\":{
+#             \"pd_width\":0.1,
+#             \"pd_type\":\"lognormal\",
+#             \"pd_n\":10,
+#             \"vary\":false
+#           },
+#           \"length\":{
+#             \"pd_width\":0.15,
+#             \"pd_type\":\"gaussian\",
+#             \"pd_n\":10,
+#             \"vary\":false
+#           }
+#         }
+#       }
+#     }
+#   }" | jq .
+# else
+#   echo "   SKIPPED - no CSV files found in uploads"
+# fi
 
 echo
 echo "=== Done ==="
