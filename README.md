@@ -4,14 +4,16 @@ MCP server for SANS (Small-Angle Neutron Scattering) data analysis.
 
 ## Tools
 
-| Tool                     | Description                                                              |
-| ------------------------ | ------------------------------------------------------------------------ |
-| `describe-possibilities` | Describe server capabilities                                             |
-| `list-sans-models`       | List available sasmodels for fitting (e.g., cylinder, sphere, ellipsoid) |
-| `get-model-parameters`   | Get parameter specs for a model (value, min, max, vary, description)     |
-| `list-uploaded-files`    | List uploaded data files (optional: filter by extension, limit)          |
-| `list-analyses`          | List available analysis types with parameters                            |
-| `run-analysis`           | Run analysis, returns fit results and plot                               |
+| Tool                          | Description                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| `describe-possibilities`      | Describe server capabilities                                                 |
+| `list-sans-models`            | List available sasmodels for fitting (e.g., cylinder, sphere, ellipsoid)     |
+| `get-model-parameters`        | Get parameter specs for a model (value, min, max, vary, description)         |
+| `get-polydisperse-parameters` | Get parameters that support polydispersity for a model                       |
+| `get-polydispersity-options`  | Get available PD distribution types (gaussian, lognormal, etc.) and defaults |
+| `list-uploaded-files`         | List uploaded data files (optional: filter by extension, limit)              |
+| `list-analyses`               | List available analysis types with parameters                                |
+| `run-analysis`                | Run analysis, returns fit results and plot                                   |
 
 ## Typical Workflow
 
@@ -39,6 +41,44 @@ MCP server for SANS (Small-Angle Neutron Scattering) data analysis.
   }
 }
 ```
+
+### Example: Fitting with polydispersity
+
+Use `get-polydisperse-parameters` to see which parameters support size distributions, then add a `polydispersity` config:
+
+```json
+{
+  "name": "fitting-with-custom-model",
+  "parameters": {
+    "input_csv": "simulated_sans_data.csv",
+    "model": "cylinder",
+    "engine": "bumps",
+    "method": "amoeba",
+    "param_overrides": {
+      "radius": { "value": 20, "min": 1, "max": 200, "vary": true },
+      "length": { "value": 400, "min": 10, "max": 4000, "vary": true },
+      "scale": { "value": 1.0, "vary": true },
+      "background": { "value": 0.001, "vary": true }
+    },
+    "polydispersity": {
+      "radius": {
+        "pd_width": 0.1,
+        "pd_type": "gaussian",
+        "pd_n": 10,
+        "vary": false
+      }
+    }
+  }
+}
+```
+
+**Polydispersity options:**
+- `pd_width`: Relative width (0.1 = 10% polydispersity)
+- `pd_type`: Distribution shape (`gaussian`, `lognormal`, `schulz`, `rectangle`, `boltzmann`)
+- `pd_n`: Number of quadrature points (higher = more accurate, slower)
+- `pd_nsigma`: Number of standard deviations to include
+- `vary`: Whether to fit the pd_width during optimization
+
 ## Authentication
 
 Set `API_TOKEN` environment variable to enable bearer token authentication:

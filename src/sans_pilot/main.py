@@ -120,6 +120,8 @@ def describe_possibilities() -> str:
     "Available tools: "
     "list-sans-models (see available models), "
     "get-model-parameters (get parameter specs for a model), "
+    "get-polydisperse-parameters (see which params support polydispersity), "
+    "get-polydispersity-options (get PD distribution types and defaults), "
     "list-analyses (see available analysis types), "
     "list-uploaded-files (find data files), "
     "run-analysis (execute an analysis and get fit results + plot)."
@@ -149,6 +151,48 @@ def get_model_parameters(model_name: str):
   fitter.set_model(model_name)
 
   return fitter.params
+
+
+@mcp.tool(
+  name="get-polydisperse-parameters",
+  description=(
+    "Get parameters that support polydispersity for a SANS model. "
+    "Returns list of parameter names that can have size distributions applied."
+  ),
+)
+def get_polydisperse_parameters(model_name: str) -> dict[str, Any]:
+  """Get polydisperse parameters for a model."""
+  fitter = SANSFitter()
+  fitter.set_model(model_name)
+
+  return {
+    "supports_polydispersity": fitter.supports_polydispersity(),
+    "polydisperse_parameters": fitter.get_polydisperse_parameters(),
+  }
+
+
+@mcp.tool(
+  name="get-polydispersity-options",
+  description=(
+    "Get available polydispersity distribution types and default values. "
+    "Use this to understand PD configuration options before running an analysis."
+  ),
+)
+def get_polydispersity_options() -> dict[str, Any]:
+  """Get polydispersity distribution types and defaults."""
+  from sans_fitter import PD_DEFAULTS, PD_DISTRIBUTION_TYPES
+
+  return {
+    "distribution_types": PD_DISTRIBUTION_TYPES,
+    "defaults": PD_DEFAULTS,
+    "description": {
+      "pd_width": "Relative width of distribution (0.1 = 10% polydispersity)",
+      "pd_type": "Distribution shape (gaussian, lognormal, schulz, rectangle, boltzmann)",
+      "pd_n": "Number of quadrature points (higher = more accurate, slower)",
+      "pd_nsigma": "Number of standard deviations to include",
+      "vary": "Whether to fit the pd_width during optimization",
+    },
+  }
 
 
 @mcp.tool(
