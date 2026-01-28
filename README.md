@@ -1,6 +1,6 @@
 # SANS-pilot
 
-MCP server for SANS (Small-Angle Neutron Scattering) data analysis.
+MCP server for SANS (Small-Angle Neutron Scattering) data analysis, powered by [SANS-fitter](https://github.com/ai4se1dk/SANS-fitter).
 
 ## Tools
 
