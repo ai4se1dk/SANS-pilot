@@ -184,5 +184,5 @@ The script tests all tools against a running server at `http://localhost:8001`. 
 ## Notes
 
 Future improvements planned:
-- Run template scripts in a separate container for security and isolation
+- Run scripts in a separate container for security and isolation
 - Add input parameter validation for all tools

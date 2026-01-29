@@ -76,7 +76,7 @@ mcp_call 6 "tools/call" '{"name":"list-uploaded-files","arguments":{"extensions"
 echo
 
 # Get first CSV file for run-template tests
-CSV_FILE=$(mcp_call 7 "tools/call" '{"name":"list-uploaded-files","arguments":{"extensions":["csv"],"limit":1}}' | jq -r '.result.content[0].text | fromjson | .[0].relative_path // empty')
+CSV_FILE=$(mcp_call 7 "tools/call" '{"name":"list-uploaded-files","arguments":{"extensions":["csv"],"limit":1}}' | jq -r '.result.content[0].text | fromjson | .[0].name // empty')
 
 # Get cylinder model parameters for param_overrides
 echo "7. Fetching cylinder model parameters for run-analysis"
