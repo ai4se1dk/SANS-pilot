@@ -35,9 +35,9 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: ./sans-pilot
-          file: ./sans-pilot/Dockerfile.prod
+          context: .
+          file: ./Dockerfile.prod
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}-sans-pilot:${{ steps.meta.outputs.tag }}
-            ghcr.io/${{ github.repository }}-sans-pilot:latest
+            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ github.repository }}:latest
