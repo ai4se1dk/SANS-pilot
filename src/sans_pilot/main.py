@@ -168,8 +168,9 @@ def get_polydispersity_options() -> dict[str, Any]:
 @mcp.tool(
   name="list-uploaded-files",
   description=(
-    "List uploaded data files. "
-    "Optional: filter by extensions (e.g. ['csv']), limit results."
+    "List uploaded data files. Show original_name for user clarity. "
+    "Optional: filter by extensions (e.g. ['csv']), limit results. "
+    "Returns list of dicts with original_name, name, bytes size and created_time."
   ),
 )
 def list_uploaded_files(
@@ -184,6 +185,7 @@ def list_uploaded_files(
     extensions_norm = {e.lower().lstrip(".") for e in extensions}
 
   results: list[dict[str, Any]] = []
+  candidates: list[tuple[float, Path]] = []
   for file_path in uploads_dir.rglob("*"):
     if not file_path.is_file():
       continue
@@ -193,11 +195,20 @@ def list_uploaded_files(
         continue
 
     stat = file_path.stat()
+    candidates.append((stat.st_ctime, file_path))
+
+  for _, file_path in sorted(candidates, key=lambda item: item[0], reverse=True):
+    stat = file_path.stat()
+    name = file_path.name
+    original_name = name
+    if "__" in name:
+      _, original_name = name.split("__", 1)
     results.append(
       {
-        "name": file_path.name,
-        "relative_path": str(file_path.relative_to(uploads_dir)),
+        "original_name": original_name,
+        "name": name,
         "bytes": stat.st_size,
+        "created_time": stat.st_ctime,
       }
     )
     if len(results) >= limit:
