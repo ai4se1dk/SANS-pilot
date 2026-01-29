@@ -28,9 +28,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract release tag
+      - name: Extract metadata
         id: meta
-        run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "repo=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -39,5 +41,5 @@ jobs:
           file: ./Dockerfile.prod
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.tag }}
-            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ steps.meta.outputs.repo }}:latest
