@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
-from fastmcp.utilities.types import Image
+from fastmcp.utilities.types import File, Image
 from sans_fitter import SANSFitter
 
 from sans_pilot.analysis_loader import execute_analysis, get_analyses_dir, load_analysis
@@ -40,6 +40,39 @@ SANS (Small-Angle Neutron Scattering) data analysis server.
 - Set `vary: true` for parameters to optimize (radius, length, scale, background)
 """,
 )
+
+
+_IMAGE_EXTENSIONS = {".png"}
+
+
+def _append_artifact_to_response(
+  response: list[str | Image | File],
+  artifact: Any,
+) -> None:
+  """Append artifact outputs recursively to MCP response."""
+  if artifact is None:
+    return
+
+  if isinstance(artifact, dict):
+    for value in artifact.values():
+      _append_artifact_to_response(response, value)
+    return
+
+  if isinstance(artifact, (list, tuple, set)):
+    for value in artifact:
+      _append_artifact_to_response(response, value)
+    return
+
+  if isinstance(artifact, (str, Path)):
+    artifact_path = Path(artifact)
+    suffix = artifact_path.suffix.lower()
+    if suffix in _IMAGE_EXTENSIONS:
+      response.append(Image(path=str(artifact_path)))
+      return
+    response.append(File(path=str(artifact_path), name=artifact_path.name))
+    return
+
+  response.append(str(artifact))
 
 
 @mcp.tool(
@@ -242,13 +275,13 @@ def list_analyses() -> dict[str, str]:
     "Run a SANS analysis. "
     "Args: name (analysis id from list-analyses), "
     "parameters (dict with input_csv and analysis-specific options like model, engine, param_overrides). "
-    "Returns fit results and a plot image."
+    "Returns depending on analysis but typically includes fit results and plot artifacts."
   ),
 )
 async def run_analysis(
   name: str,
   parameters: dict[str, Any] | None = None,
-) -> list[str | Image]:
+) -> list[str | Image | File]:
   """Run an analysis and return fit results with plot."""
 
   parameters = parameters or {}
@@ -270,7 +303,19 @@ async def run_analysis(
   # Run analysis in thread pool to avoid blocking the event loop
   analysis_result = await asyncio.to_thread(execute_analysis, name, parameters)
 
-  return [analysis_result["fit"], Image(path=analysis_result["artifacts"]["plot"])]
+  response: list[str | Image | File] = []
+
+  fit_output = analysis_result.get("fit")
+  if fit_output is not None:
+    response.append(str(fit_output))
+
+  artifacts = analysis_result.get("artifacts")
+  _append_artifact_to_response(response, artifacts)
+
+  if not response:
+    response.append(str(analysis_result))
+
+  return response
 
 
 def main() -> None:

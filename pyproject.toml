@@ -1,18 +1,18 @@
 [project]
 name = "sans-pilot"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for SANS data analysis"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-	"fastmcp>=3.0.0b1",
+    "fastmcp>=3.0.0b1",
     "sans-fitter>=0.0.3",
     "kaleido>=1.2.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-	"ruff>=0.14.10",
+    "ruff>=0.14.10",
 ]
 
 [project.scripts]
