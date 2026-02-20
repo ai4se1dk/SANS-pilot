@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import numbers
 from pathlib import Path
 from typing import Any, Literal
 
@@ -25,8 +27,84 @@ ANALYSIS_DESCRIPTION = (
   "polydispersity (dict, optional) - PD config per param with pd_width/pd_type/pd_n/pd_nsigma/vary, "
   "engine (bumps|lmfit, default: bumps), "
   "method (str, default: amoeba), "
-  "plot_log_scale (bool, default: True)."
+  "plot_log_scale (bool, default: True). "
+  "Output includes sasview_parameter_values.txt with fitted parameter values in colon-separated text format."
 )
+
+
+def _normalize_scalar(value: Any) -> Any:
+  """Normalize scalar scientific/python values for text serialization."""
+  if hasattr(value, "item"):
+    try:
+      value = value.item()
+    except Exception:
+      pass
+
+  if isinstance(value, numbers.Real) and not isinstance(value, bool):
+    numeric_value = float(value)
+    if numeric_value.is_integer() and isinstance(value, (int,)):
+      return int(numeric_value)
+    if math.isnan(numeric_value):
+      return "nan"
+    if math.isinf(numeric_value):
+      return "inf" if numeric_value > 0 else "-inf"
+    return numeric_value
+
+  if isinstance(value, float):
+    if math.isnan(value):
+      return "nan"
+    if math.isinf(value):
+      return "inf" if value > 0 else "-inf"
+
+  if isinstance(value, (str, int, bool)) or value is None:
+    return value
+
+  return str(value)
+
+
+def _build_parameter_export(
+  *,
+  model: str,
+  params: dict[str, dict[str, Any]],
+  fit_result: dict[str, Any],
+) -> list[list[str]]:
+  """Build sasview-like parameter rows for text export."""
+  fit_parameters = (
+    fit_result.get("parameters", {}) if isinstance(fit_result, dict) else {}
+  )
+  rows: list[list[str]] = [["model_name", model]]
+
+  def to_text(value: Any, *, none_as: str = "") -> str:
+    converted = _normalize_scalar(value)
+    if converted is None:
+      return none_as
+    if isinstance(converted, bool):
+      return "True" if converted else "False"
+    return str(converted)
+
+  rows.append([model, "None", "", "None", "", "", "()"])
+
+  for name, config in params.items():
+    fit_param = fit_parameters.get(name, {}) if isinstance(fit_parameters, dict) else {}
+    rows.append(
+      [
+        name,
+        to_text(config.get("vary"), none_as="None"),
+        to_text(config.get("value")),
+        to_text(fit_param.get("stderr"), none_as="None"),
+        to_text(config.get("min")),
+        to_text(config.get("max")),
+        to_text(config.get("expr") if config.get("expr") is not None else "()"),
+      ]
+    )
+
+  return rows
+
+
+def _serialize_sasview_parameter_values(rows: list[list[str]]) -> str:
+  """Serialize rows into SasView compact text format (':' between records)."""
+  payload = ":".join(",".join(str(value) for value in row) for row in rows)
+  return f"sasview_parameter_values:{payload}"
 
 
 def run(
@@ -151,12 +229,26 @@ def run(
   except Exception as e:
     raise RuntimeError(f"Fitting failed for model '{model}': {e}") from e
 
+  parameter_rows = _build_parameter_export(
+    model=model,
+    params=fitter.params,
+    fit_result=fit_result,
+  )
+
+  parameter_text = _serialize_sasview_parameter_values(parameter_rows)
+  parameter_text_path = out_dir / "sasview_parameter_values.txt"
+  parameter_text_path.write_text(parameter_text, encoding="utf-8")
+
   plot = fitter.plot_results(show_residuals=True, log_scale=plot_log_scale)
-  plot.write_image(str(out_dir / "fit_plot.png"))
+  plot_path = str(out_dir / "fit_plot.png")
+  plot.write_image(plot_path)
 
   return {
     "fit": str(fit_result),
-    "artifacts": {"plot": str(out_dir / "fit_plot.png")},
+    "artifacts": {
+      "plot": plot_path,
+      "sasview_parameter_values_text": str(parameter_text_path),
+    },
   }
 
 
