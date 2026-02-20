@@ -240,14 +240,14 @@ def run(
   parameter_text_path.write_text(parameter_text, encoding="utf-8")
 
   plot = fitter.plot_results(show_residuals=True, log_scale=plot_log_scale)
-  plot_path = str(out_dir / "fit_plot.png")
+  plot_path = Path(out_dir / "fit_plot.png")
   plot.write_image(plot_path)
 
   return {
     "fit": str(fit_result),
     "artifacts": {
-      "plot": plot_path,
-      "sasview_parameter_values_text": str(parameter_text_path),
+      "fit_plot.png": plot_path,
+      "sasview_parameter_values.txt": parameter_text_path,
     },
   }
 
