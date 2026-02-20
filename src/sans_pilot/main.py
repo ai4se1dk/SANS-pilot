@@ -49,30 +49,23 @@ def _append_artifact_to_response(
   response: list[str | Image | File],
   artifact: Any,
 ) -> None:
-  """Append artifact outputs recursively to MCP response."""
+  """Append artifact outputs based on current analysis contract."""
   if artifact is None:
     return
 
-  if isinstance(artifact, dict):
-    for value in artifact.values():
-      _append_artifact_to_response(response, value)
+  if not isinstance(artifact, dict):
     return
 
-  if isinstance(artifact, (list, tuple, set)):
-    for value in artifact:
-      _append_artifact_to_response(response, value)
-    return
+  for value in artifact.values():
+    if not isinstance(value, (str, Path)):
+      continue
 
-  if isinstance(artifact, (str, Path)):
-    artifact_path = Path(artifact)
+    artifact_path = Path(value)
     suffix = artifact_path.suffix.lower()
     if suffix in _IMAGE_EXTENSIONS:
       response.append(Image(path=str(artifact_path)))
-      return
+      continue
     response.append(File(path=str(artifact_path), name=artifact_path.name))
-    return
-
-  response.append(str(artifact))
 
 
 @mcp.tool(
@@ -311,9 +304,6 @@ async def run_analysis(
 
   artifacts = analysis_result.get("artifacts")
   _append_artifact_to_response(response, artifacts)
-
-  if not response:
-    response.append(str(analysis_result))
 
   return response
 
