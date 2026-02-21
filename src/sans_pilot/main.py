@@ -28,9 +28,19 @@ SANS (Small-Angle Neutron Scattering) data analysis server.
 
 ## Workflow
 1. `list-uploaded-files` - Find user's CSV data files
-2. `list-sans-models` - Show available models (cylinder, sphere, ellipsoid, etc.)
-3. `get-model-parameters` - Get parameter specs for a model
-4. `run-analysis` - Execute fitting with model, param_overrides, and optional structure_factor/polydispersity
+2. `list-analyses` - Discover valid analysis names
+3. `list-sans-models` - Show available models (cylinder, sphere, ellipsoid, etc.)
+4. `get-model-parameters` - Get parameter specs for a model
+5. `run-analysis` - Execute fitting with model, param_overrides, and optional structure_factor/polydispersity
+
+## Tool Calling Rule
+- Never call `run-analysis` with a guessed `name`
+- Always call `list-analyses` first and use an exact key from that response
+
+## Low-Friction First Run
+- If user asks to run analysis without specifying a model, do not block for model selection
+- Use latest uploaded CSV, choose a valid analysis from `list-analyses`, and run an initial baseline fit
+- Ask follow-up questions only when there is no usable file or tool execution fails
 
 ## Key Tools
 - `list-structure-factors` / `get-structure-factor-parameters` - For concentrated samples with particle interactions
@@ -278,6 +288,18 @@ async def run_analysis(
   """Run an analysis and return fit results with plot."""
 
   parameters = parameters or {}
+
+  available_analyses = sorted(
+    path.stem
+    for path in get_analyses_dir().glob("*.py")
+    if not path.name.startswith("_")
+  )
+  if name not in available_analyses:
+    available = ", ".join(available_analyses) if available_analyses else "<none>"
+    raise ValueError(
+      f"Invalid analysis name '{name}'. Call list-analyses first and use an exact name. "
+      f"Available analyses: {available}"
+    )
 
   # Resolve input file path if provided
   input_csv = parameters.get("input_csv")
