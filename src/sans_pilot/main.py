@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-import time
+import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -305,15 +306,27 @@ async def run_analysis(
   input_csv = parameters.get("input_csv")
   if isinstance(input_csv, str) and input_csv.strip():
     user_id = get_user_id_from_request()
-    parameters["input_csv"] = str(
-      resolve_uploaded_path(input_csv.strip(), user_id=user_id)
-    )
+    parameters["input_csv"] = resolve_uploaded_path(input_csv.strip(), user_id=user_id)
 
   # Create output directory
   runs_dir = Path(os.environ.get("SANS_PILOT_RUNS_DIR", "/tmp/sans-pilot-runs"))
   runs_dir.mkdir(parents=True, exist_ok=True)
-  run_id = str(int(time.time() * 1000))
-  parameters["output_dir"] = str(runs_dir / name.replace("/", "_") / run_id)
+  run_id = (
+    uuid.uuid4().hex
+  )  # Unique ID for this run to avoid collisions in parallel executions
+  out_dir = runs_dir / name.replace("/", "_") / run_id
+  out_dir.mkdir(parents=True, exist_ok=True)
+  parameters["output_dir"] = str(out_dir)
+
+  # Copy input file into the run directory so parallel executions
+  # each read from their own copy and avoid file-contention errors.
+  resolved_csv = parameters.get("input_csv")
+  if resolved_csv and resolved_csv.is_file():
+    dst = out_dir / resolved_csv.name
+    shutil.copy2(resolved_csv, dst)
+    parameters["input_csv"] = str(dst)
+  else:
+    raise ValueError(f"Input CSV file not found: {resolved_csv}")
 
   # Run analysis in thread pool to avoid blocking the event loop
   analysis_result = await asyncio.to_thread(execute_analysis, name, parameters)
