@@ -39,9 +39,11 @@ def calculate_neutron_sld(
     scattering_kwargs["density"] = mass_density
 
   try:
-    (neutron_sld_real, neutron_sld_imag, _), \
-      (_, _neutron_abs_xs, _neutron_inc_xs), \
-      _neutron_length = neutron_scattering(**scattering_kwargs)
+    (
+      (neutron_sld_real, neutron_sld_imag, _),
+      (_, _neutron_abs_xs, _neutron_inc_xs),
+      _neutron_length,
+    ) = neutron_scattering(**scattering_kwargs)
   except KeyError as exc:
     raise ValueError(
       f"Unknown element or invalid formula: {molecular_formula}"

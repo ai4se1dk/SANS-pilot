@@ -6,10 +6,10 @@ import pytest
 
 from sans_pilot.sld import calculate_neutron_sld
 
-
 # ---------------------------------------------------------------------------
 # Happy-path calculations (values cross-checked against SasView)
 # ---------------------------------------------------------------------------
+
 
 class TestWater:
   def test_sld_real(self):
@@ -60,6 +60,7 @@ class TestEmbeddedDensityMixture:
 # Output shape
 # ---------------------------------------------------------------------------
 
+
 class TestOutputShape:
   def test_keys(self):
     result = calculate_neutron_sld("H2O", mass_density=1.0)
@@ -89,6 +90,7 @@ class TestOutputShape:
 # ---------------------------------------------------------------------------
 # Validation / error paths
 # ---------------------------------------------------------------------------
+
 
 class TestValidation:
   def test_empty_formula_raises(self):
@@ -120,6 +122,7 @@ class TestValidation:
 # MCP tool-level integration test
 # ---------------------------------------------------------------------------
 
+
 class TestMCPToolRegistration:
   def test_calculate_sld_tool_exists(self):
     """Verify the tool is registered on the MCP server."""
@@ -137,9 +140,12 @@ class TestMCPToolRegistration:
     import asyncio
 
     from fastmcp.exceptions import ToolError
+
     from sans_pilot.main import mcp
 
     with pytest.raises(ToolError, match="Could not parse"):
       asyncio.run(
-        mcp.call_tool("calculate-sld", {"molecular_formula": "Zq3", "mass_density": 1.0})
+        mcp.call_tool(
+          "calculate-sld", {"molecular_formula": "Zq3", "mass_density": 1.0}
+        )
       )
