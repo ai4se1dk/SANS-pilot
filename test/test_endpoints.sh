@@ -98,7 +98,7 @@ echo
 echo "8. run-analysis (fitting-with-custom-model, cylinder)"
 if [ -n "$CSV_FILE" ]; then
   echo "   Using file: $CSV_FILE"
-  mcp_call 9 "tools/call" "{
+  RUN_ANALYSIS_RESPONSE=$(mcp_call 9 "tools/call" "{
     \"name\":\"run-analysis\",
     \"arguments\":{
       \"name\":\"fitting-with-custom-model\",
@@ -110,7 +110,28 @@ if [ -n "$CSV_FILE" ]; then
         \"param_overrides\":$CYLINDER_PARAMS
       }
     }
-  }" | jq .
+  }")
+
+  echo "$RUN_ANALYSIS_RESPONSE" | jq .
+
+  echo "   Verifying run-analysis includes parameter export output (.txt resource)"
+  HAS_PARAM_PREFIX_TEXT=$(echo "$RUN_ANALYSIS_RESPONSE" | jq -r '
+    [(.result.content // [])[] | .text? // ""]
+    | any(test("sasview_parameter_values:"))
+  ')
+  HAS_PARAM_FILE=$(echo "$RUN_ANALYSIS_RESPONSE" | jq -r '
+    [(.result.content // [])[] | tostring]
+    | any(test("sasview_parameter_values\\.txt"))
+  ')
+
+  if [ "$HAS_PARAM_FILE" = "true" ] || [ "$HAS_PARAM_PREFIX_TEXT" = "true" ]; then
+    echo "   ✅ Parameter export output is present in MCP response"
+  else
+    echo "   ❌ Parameter export output missing from MCP response"
+    echo "   Debug content entries:"
+    echo "$RUN_ANALYSIS_RESPONSE" | jq '.result.content // []'
+    exit 1
+  fi
 else
   echo "   SKIPPED - no CSV files found in uploads"
 fi
