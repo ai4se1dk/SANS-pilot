@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import os
-import time
+import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
-from fastmcp.utilities.types import Image
+from fastmcp.utilities.types import File, Image
 from sans_fitter import SANSFitter
 
 from sans_pilot.analysis_loader import execute_analysis, get_analyses_dir, load_analysis
@@ -29,9 +30,19 @@ SANS (Small-Angle Neutron Scattering) data analysis server.
 
 ## Workflow
 1. `list-uploaded-files` - Find user's CSV data files
-2. `list-sans-models` - Show available models (cylinder, sphere, ellipsoid, etc.)
-3. `get-model-parameters` - Get parameter specs for a model
-4. `run-analysis` - Execute fitting with model, param_overrides, and optional structure_factor/polydispersity
+2. `list-analyses` - Discover valid analysis names
+3. `list-sans-models` - Show available models (cylinder, sphere, ellipsoid, etc.)
+4. `get-model-parameters` - Get parameter specs for a model
+5. `run-analysis` - Execute fitting with model, param_overrides, and optional structure_factor/polydispersity
+
+## Tool Calling Rule
+- Never call `run-analysis` with a guessed `name`
+- Always call `list-analyses` first and use an exact key from that response
+
+## Low-Friction First Run
+- If user asks to run analysis without specifying a model, do not block for model selection
+- Use latest uploaded CSV, choose a valid analysis from `list-analyses`, and run an initial baseline fit
+- Ask follow-up questions only when there is no usable file or tool execution fails
 
 ## Key Tools
 - `list-structure-factors` / `get-structure-factor-parameters` - For concentrated samples with particle interactions
@@ -41,6 +52,32 @@ SANS (Small-Angle Neutron Scattering) data analysis server.
 - Set `vary: true` for parameters to optimize (radius, length, scale, background)
 """,
 )
+
+
+_IMAGE_EXTENSIONS = {".png"}
+
+
+def _append_artifact_to_response(
+  response: list[str | Image | File],
+  artifact: Any,
+) -> None:
+  """Append artifact outputs based on current analysis contract."""
+  if artifact is None:
+    return
+
+  if not isinstance(artifact, dict):
+    return
+
+  for value in artifact.values():
+    if not isinstance(value, (str, Path)):
+      continue
+
+    artifact_path = Path(value)
+    suffix = artifact_path.suffix.lower()
+    if suffix in _IMAGE_EXTENSIONS:
+      response.append(Image(path=str(artifact_path)))
+      continue
+    response.append(File(path=str(artifact_path), name=artifact_path.name))
 
 
 @mcp.tool(
@@ -244,35 +281,68 @@ def list_analyses() -> dict[str, str]:
     "Run a SANS analysis. "
     "Args: name (analysis id from list-analyses), "
     "parameters (dict with input_csv and analysis-specific options like model, engine, param_overrides). "
-    "Returns fit results and a plot image."
+    "Returns depending on analysis but typically includes fit results and plot artifacts."
   ),
 )
 async def run_analysis(
   name: str,
   parameters: dict[str, Any] | None = None,
-) -> list[str | Image]:
+) -> list[str | Image | File]:
   """Run an analysis and return fit results with plot."""
 
   parameters = parameters or {}
+
+  available_analyses = sorted(
+    path.stem
+    for path in get_analyses_dir().glob("*.py")
+    if not path.name.startswith("_")
+  )
+  if name not in available_analyses:
+    available = ", ".join(available_analyses) if available_analyses else "<none>"
+    raise ValueError(
+      f"Invalid analysis name '{name}'. Call list-analyses first and use an exact name. "
+      f"Available analyses: {available}"
+    )
 
   # Resolve input file path if provided
   input_csv = parameters.get("input_csv")
   if isinstance(input_csv, str) and input_csv.strip():
     user_id = get_user_id_from_request()
-    parameters["input_csv"] = str(
-      resolve_uploaded_path(input_csv.strip(), user_id=user_id)
-    )
+    parameters["input_csv"] = resolve_uploaded_path(input_csv.strip(), user_id=user_id)
 
   # Create output directory
   runs_dir = Path(os.environ.get("SANS_PILOT_RUNS_DIR", "/tmp/sans-pilot-runs"))
   runs_dir.mkdir(parents=True, exist_ok=True)
-  run_id = str(int(time.time() * 1000))
-  parameters["output_dir"] = str(runs_dir / name.replace("/", "_") / run_id)
+  run_id = (
+    uuid.uuid4().hex
+  )  # Unique ID for this run to avoid collisions in parallel executions
+  out_dir = runs_dir / name.replace("/", "_") / run_id
+  out_dir.mkdir(parents=True, exist_ok=True)
+  parameters["output_dir"] = str(out_dir)
+
+  # Copy input file into the run directory so parallel executions
+  # each read from their own copy and avoid file-contention errors.
+  resolved_csv = parameters.get("input_csv")
+  if resolved_csv and resolved_csv.is_file():
+    dst = out_dir / resolved_csv.name
+    shutil.copy2(resolved_csv, dst)
+    parameters["input_csv"] = str(dst)
+  else:
+    raise ValueError(f"Input CSV file not found: {resolved_csv}")
 
   # Run analysis in thread pool to avoid blocking the event loop
   analysis_result = await asyncio.to_thread(execute_analysis, name, parameters)
 
-  return [analysis_result["fit"], Image(path=analysis_result["artifacts"]["plot"])]
+  response: list[str | Image | File] = []
+
+  fit_output = analysis_result.get("fit")
+  if fit_output is not None:
+    response.append(str(fit_output))
+
+  artifacts = analysis_result.get("artifacts")
+  _append_artifact_to_response(response, artifacts)
+
+  return response
 
 
 @mcp.tool(
