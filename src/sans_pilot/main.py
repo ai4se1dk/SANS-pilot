@@ -20,6 +20,7 @@ from sans_pilot.files import (
   get_user_id_from_request,
   resolve_uploaded_path,
 )
+from sans_pilot.sld import calculate_neutron_sld
 
 mcp = FastMCP(
   "sans-pilot",
@@ -96,7 +97,8 @@ def describe_possibilities() -> str:
     "get-polydispersity-options (get PD distribution types and defaults), "
     "list-analyses (see available analysis types), "
     "list-uploaded-files (find data files), "
-    "run-analysis (execute an analysis and get fit results + plot)."
+    "run-analysis (execute an analysis and get fit results + plot), "
+    "calculate-sld (compute neutron SLD for a molecular formula and density)."
   )
 
 
@@ -341,6 +343,23 @@ async def run_analysis(
   _append_artifact_to_response(response, artifacts)
 
   return response
+
+
+@mcp.tool(
+  name="calculate-sld",
+  description=(
+    "Calculate the Neutron Scattering Length Density (SLD) for a given "
+    "molecular formula and mass density. SLD values are essential for "
+    "SANS experiment planning — they determine contrast between sample "
+    "components and solvent. Uses the same algorithm as SasView's SLD calculator."
+  ),
+)
+def calculate_sld(
+  molecular_formula: str,
+  mass_density: float | None = None,
+  neutron_wavelength: float = 6.0,
+) -> dict:
+  return calculate_neutron_sld(molecular_formula, mass_density, neutron_wavelength)
 
 
 def main() -> None:

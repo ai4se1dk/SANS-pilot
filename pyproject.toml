@@ -8,11 +8,13 @@ dependencies = [
     "fastmcp>=3.0.0b1",
     "sans-fitter>=0.0.3",
     "kaleido>=1.2.0",
+    "periodictable>=1.7.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "ruff>=0.14.10",
+	"ruff>=0.14.10",
+	"pytest>=8.0",
 ]
 
 [project.scripts]
