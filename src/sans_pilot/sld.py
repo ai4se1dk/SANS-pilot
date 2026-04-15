@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from periodictable.nsf import neutron_scattering
 
 _SCALE = 1e-6
+
+_NeutronSldTriplet = tuple[float, float, float]
+_NeutronScatteringResult = tuple[
+  _NeutronSldTriplet,
+  _NeutronSldTriplet,
+  float,
+]
 
 
 def calculate_neutron_sld(
@@ -39,11 +48,17 @@ def calculate_neutron_sld(
     scattering_kwargs["density"] = mass_density
 
   try:
+    scattering_result = neutron_scattering(**scattering_kwargs)
+    if any(part is None for part in scattering_result):
+      raise ValueError(
+        f"Could not calculate neutron scattering for '{molecular_formula}'"
+      )
+
     (
       (neutron_sld_real, neutron_sld_imag, _),
       (_, _neutron_abs_xs, _neutron_inc_xs),
       _neutron_length,
-    ) = neutron_scattering(**scattering_kwargs)
+    ) = cast(_NeutronScatteringResult, scattering_result)
   except KeyError as exc:
     raise ValueError(
       f"Unknown element or invalid formula: {molecular_formula}"
