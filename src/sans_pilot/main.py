@@ -11,6 +11,14 @@ from typing import Any
 from fastmcp import FastMCP
 from fastmcp.utilities.types import Image
 from sans_fitter import SANSFitter
+from sans_fitter.capabilities import (
+    get_available_models,
+    get_model_parameter_specs,
+    get_model_polydispersity_support,
+    get_polydispersity_options,
+    get_product_model_parameters,
+    get_supported_structure_factors,
+)
 
 from sans_pilot.analysis_loader import execute_analysis, get_analyses_dir, load_analysis
 from sans_pilot.auth import create_auth_verifier
@@ -68,10 +76,7 @@ def describe_possibilities() -> str:
   description=("List available SANS models which can be used for fitting data."),
 )
 def list_sans_models():
-  from sasmodels import core
-
-  all_models = core.list_models()
-  return sorted(all_models)
+  return get_available_models()
 
 
 @mcp.tool(
@@ -82,10 +87,7 @@ def list_sans_models():
   ),
 )
 def get_model_parameters(model_name: str):
-  fitter = SANSFitter()
-  fitter.set_model(model_name)
-
-  return fitter.params
+  return get_model_parameter_specs(model_name)
 
 
 @mcp.tool(
@@ -97,12 +99,7 @@ def get_model_parameters(model_name: str):
 )
 def list_structure_factors() -> dict[str, str]:
   """List supported structure factors with descriptions."""
-  return {
-    "hardsphere": "Hard sphere structure factor (Percus-Yevick closure) - for non-interacting hard spheres",
-    "hayter_msa": "Hayter-Penfold rescaled MSA - for charged spheres with Coulombic interactions",
-    "squarewell": "Square well potential - for particles with short-range attraction",
-    "stickyhardsphere": "Sticky hard sphere (Baxter model) - for particles with very short-range attraction",
-  }
+  return get_supported_structure_factors()
 
 
 @mcp.tool(
@@ -117,10 +114,7 @@ def get_structure_factor_parameters(
   structure_factor: str,
 ) -> dict[str, Any]:
   """Get parameters for a product model (form_factor@structure_factor)."""
-  fitter = SANSFitter()
-  fitter.set_model(form_factor)
-  fitter.set_structure_factor(structure_factor)
-  return fitter.params
+  return get_product_model_parameters(form_factor, structure_factor)
 
 
 @mcp.tool(
@@ -132,13 +126,7 @@ def get_structure_factor_parameters(
 )
 def get_polydisperse_parameters(model_name: str) -> dict[str, Any]:
   """Get polydisperse parameters for a model."""
-  fitter = SANSFitter()
-  fitter.set_model(model_name)
-
-  return {
-    "supports_polydispersity": fitter.supports_polydispersity(),
-    "polydisperse_parameters": fitter.get_polydisperse_parameters(),
-  }
+  return get_model_polydispersity_support(model_name)
 
 
 @mcp.tool(
@@ -148,21 +136,9 @@ def get_polydisperse_parameters(model_name: str) -> dict[str, Any]:
     "Use this to understand PD configuration options before running an analysis."
   ),
 )
-def get_polydispersity_options() -> dict[str, Any]:
+def get_polydispersity_options_tool() -> dict[str, Any]:
   """Get polydispersity distribution types and defaults."""
-  from sans_fitter import PD_DEFAULTS, PD_DISTRIBUTION_TYPES
-
-  return {
-    "distribution_types": PD_DISTRIBUTION_TYPES,
-    "defaults": PD_DEFAULTS,
-    "description": {
-      "pd_width": "Relative width of distribution (0.1 = 10% polydispersity)",
-      "pd_type": "Distribution shape (gaussian, lognormal, schulz, rectangle, boltzmann)",
-      "pd_n": "Number of quadrature points (higher = more accurate, slower)",
-      "pd_nsigma": "Number of standard deviations to include",
-      "vary": "Whether to fit the pd_width during optimization",
-    },
-  }
+  return get_polydispersity_options()
 
 
 @mcp.tool(

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from sans_fitter import SANSFitter
+from sans_fitter.sasview_params import parse_sasview_params
 
 ANALYSIS_NAME = "fitting-with-custom-model"
 ANALYSIS_DESCRIPTION = (
@@ -33,8 +34,9 @@ def run(
   *,
   input_csv: str | Path,
   output_dir: str | Path,
-  model: str,
-  param_overrides: dict[str, dict[str, Any]],
+  model: str | None = None,
+  param_overrides: dict[str, dict[str, Any]] | None = None,
+  sasview_params_file: str | Path | None = None,
   structure_factor: str | None = None,
   structure_factor_params: dict[str, dict[str, Any]] | None = None,
   radius_effective_mode: Literal["unconstrained", "link_radius"] = "unconstrained",
@@ -48,8 +50,11 @@ def run(
   Args:
     input_csv: Path to the CSV data file.
     output_dir: Directory for output artifacts.
-    model: Name of the SANS model to use.
+    model: Name of the SANS model to use.  Required unless sasview_params_file is given.
     param_overrides: Model parameters (value/min/max/vary). Set vary=true for params to fit.
+    sasview_params_file: Optional path to a SasView parameter export file.  When provided,
+      the model name and scalar parameters are read from the file.  Explicit *model* and
+      *param_overrides* values take precedence over the file contents.
     structure_factor: Optional structure factor name (hardsphere, hayter_msa, squarewell, stickyhardsphere).
     structure_factor_params: Optional structure factor parameter overrides (volfraction, radius_effective, charge).
     radius_effective_mode: How to handle radius_effective. 'unconstrained' (default) or 'link_radius'.
@@ -63,6 +68,44 @@ def run(
   Returns:
     Dict with fit results, and artifacts.
   """
+
+  # Resolve model + param_overrides from SasView file when provided
+  if sasview_params_file is not None:
+    sv_path = Path(sasview_params_file)
+    if not sv_path.is_file():
+      raise FileNotFoundError(f"SasView parameter file not found: {sv_path}")
+    parsed = parse_sasview_params(sv_path)
+
+    if "@" in parsed.model_name:
+      raise ValueError(
+        f"Product-model import is not supported: {parsed.model_name!r}"
+      )
+
+    # File provides defaults; explicit args take precedence
+    if model is None:
+      model = parsed.model_name
+
+    # Build overrides from file, then layer explicit overrides on top
+    pd_suffixes = ("_pd", "_pd_n", "_pd_nsigma", "_pd_type")
+    sv_overrides: dict[str, dict[str, Any]] = {}
+    for p in parsed.params:
+      if any(p.name.endswith(s) for s in pd_suffixes):
+        continue
+      entry: dict[str, Any] = {"value": p.value, "vary": p.vary}
+      if p.min is not None:
+        entry["min"] = p.min
+      if p.max is not None:
+        entry["max"] = p.max
+      sv_overrides[p.name] = entry
+
+    if param_overrides:
+      sv_overrides.update(param_overrides)
+    param_overrides = sv_overrides
+
+  if model is None:
+    raise ValueError("'model' is required when sasview_params_file is not provided")
+
+  param_overrides = param_overrides or {}
 
   input_path = Path(input_csv)
 
