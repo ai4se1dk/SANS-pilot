@@ -28,6 +28,7 @@ def test_filter_actionable_warnings_ignores_known_bumps_deprecation():
 
   assert result == ["Resolution data was not propagated"]
 
+
 # ---------------------------------------------------------------------------
 # Scalar normalization
 # ---------------------------------------------------------------------------

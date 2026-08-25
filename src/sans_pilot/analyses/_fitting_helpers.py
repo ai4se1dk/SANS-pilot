@@ -29,9 +29,7 @@ def filter_actionable_warnings(messages: Iterable[str]) -> list[str]:
   """Return unique warnings that are useful to the analysis consumer."""
   return list(
     dict.fromkeys(
-      message
-      for message in messages
-      if message not in _NON_ACTIONABLE_WARNING_MESSAGES
+      message for message in messages if message not in _NON_ACTIONABLE_WARNING_MESSAGES
     )
   )
 
