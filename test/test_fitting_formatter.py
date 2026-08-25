@@ -9,10 +9,24 @@ import numpy as np
 import pytest
 
 from sans_pilot.analyses._fitting_helpers import (
+  filter_actionable_warnings,
   format_fit_result,
+  format_posterior_summary,
   normalize_scalar,
   normalize_value,
 )
+
+
+def test_filter_actionable_warnings_ignores_known_bumps_deprecation():
+  result = filter_actionable_warnings(
+    [
+      "Deprecated: use of problem.fitness will be removed at some point",
+      "Resolution data was not propagated",
+      "Resolution data was not propagated",
+    ]
+  )
+
+  assert result == ["Resolution data was not propagated"]
 
 # ---------------------------------------------------------------------------
 # Scalar normalization
@@ -251,3 +265,37 @@ class TestFitResultFormatting:
     }
     assert "fun" not in out["optimizer"]
     assert "jac" not in out["optimizer"]
+
+
+def test_format_posterior_summary_excludes_raw_samples():
+  posterior = types.SimpleNamespace(
+    labels=["radius"],
+    n_samples=np.int64(500),
+    samples=np.ones((500, 1)),
+    logp=np.ones(500),
+    best={"radius": np.float64(50.0)},
+    mean={"radius": np.float64(50.2)},
+    median={"radius": np.float64(50.1)},
+    std={"radius": np.float64(1.5)},
+    ci_68={"radius": (np.float64(48.7), np.float64(51.7))},
+    ci_95={"radius": (np.float64(47.0), np.float64(53.0))},
+    diagnostics={"radius": {"r_hat": np.float64(1.01), "ess": np.float64(420)}},
+  )
+
+  result = format_posterior_summary(posterior)
+
+  assert result == {
+    "samples": 500,
+    "parameters": {
+      "radius": {
+        "best": 50.0,
+        "mean": 50.2,
+        "median": 50.1,
+        "std": 1.5,
+        "ci_68": [48.7, 51.7],
+        "ci_95": [47.0, 53.0],
+        "diagnostics": {"r_hat": 1.01, "ess": 420.0},
+      }
+    },
+  }
+  assert "samples" not in result["parameters"]["radius"]

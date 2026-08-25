@@ -14,15 +14,17 @@ MCP server for SANS (Small-Angle Neutron Scattering) data analysis, powered by [
 | `get-polydisperse-parameters`     | Get parameters that support polydispersity for a model                       |
 | `get-polydispersity-options`      | Get available PD distribution types (gaussian, lognormal, etc.) and defaults |
 | `list-uploaded-files`             | List uploaded data files (optional: filter by extension, limit)              |
+| `inspect-sans-data`               | Inspect Q range, dI, dQ, and invalid points without fitting                  |
 | `list-analyses`                   | List available analysis types with parameters                                |
-| `run-analysis`                    | Run analysis, returns fit results and plot                                   |
+| `run-analysis`                    | Run optimization or Bayesian fitting and return results plus artifacts       |
 
 ## Typical Workflow
 
 1. **Discover models**: Call `list-sans-models` to see available sasmodels
 2. **Get parameters**: Call `get-model-parameters` with model name to see default params
-3. **Find data**: Call `list-uploaded-files` to find your CSV data file
-4. **Run fit**: Call `run-analysis` with analysis name, input file, model, and param overrides
+3. **Find data**: Call `list-uploaded-files` to find your SANS data file
+4. **Inspect data**: Call `inspect-sans-data` to check Q range, dI, and dQ
+5. **Run fit**: Call `run-analysis` with analysis name, input file, model, and param overrides
 
 ### Example: Fitting cylinder model
 
@@ -30,7 +32,7 @@ MCP server for SANS (Small-Angle Neutron Scattering) data analysis, powered by [
 {
   "name": "fitting-with-custom-model",
   "parameters": {
-    "input_csv": "simulated_sans_data.csv",
+    "input_file": "simulated_sans_data.csv",
     "model": "cylinder",
     "engine": "bumps",
     "method": "amoeba",
@@ -52,7 +54,7 @@ Use `get-polydisperse-parameters` to see which parameters support size distribut
 {
   "name": "fitting-with-custom-model",
   "parameters": {
-    "input_csv": "simulated_sans_data.csv",
+    "input_file": "simulated_sans_data.csv",
     "model": "cylinder",
     "engine": "bumps",
     "method": "amoeba",
@@ -94,7 +96,7 @@ Structure factors model inter-particle interactions in concentrated systems. Use
 {
   "name": "fitting-with-custom-model",
   "parameters": {
-    "input_csv": "simulated_sans_data.csv",
+    "input_file": "simulated_sans_data.csv",
     "model": "sphere",
     "engine": "bumps",
     "method": "amoeba",
@@ -116,6 +118,65 @@ Structure factors model inter-particle interactions in concentrated systems. Use
 - `structure_factor`: Name of the structure factor
 - `structure_factor_params`: Parameter overrides (volfraction, radius_effective, charge for hayter_msa)
 - `radius_effective_mode`: `"unconstrained"` (default) or `"link_radius"` to constrain radius_effective to equal the form factor radius
+
+### Q range and Q resolution
+
+Use `q_min` and `q_max` to restrict the fitted range without editing the data.
+If the input contains a dQ column, `sans-fitter` automatically applies the
+resolution and includes it in the fit plot and `fit_results.csv`.
+
+```json
+{
+  "q_min": 0.01,
+  "q_max": 0.3
+}
+```
+
+### Background subtraction and scaling
+
+Use an ordered preprocessing pipeline. Auxiliary operands reference aliases,
+so their uploaded filenames are resolved and isolated by the server.
+
+```json
+{
+  "input_file": "sample.csv",
+  "auxiliary_files": {
+    "background": "empty_cell.csv"
+  },
+  "data_operations": [
+    { "operation": "subtract", "operand": "background" },
+    { "operation": "divide", "scalar": 0.8 }
+  ]
+}
+```
+
+Supported operations are `add`, `subtract`, `multiply`, and `divide`.
+
+### Bayesian fitting
+
+Set `fit_type` to `bayesian` to sample parameter posteriors with BUMPS DREAM.
+The MCP response contains compact credible intervals and diagnostics. Raw
+samples are returned as `posterior_chain.csv`, not placed in model context.
+
+```json
+{
+  "fit_type": "bayesian",
+  "engine": "bumps",
+  "method": "dream",
+  "samples": 5000,
+  "burn": 200,
+  "thin": 1,
+  "pop": 10,
+  "posterior_plots": ["predictive", "pairs", "trace"],
+  "include_posterior_chain": true
+}
+```
+
+Every fit returns compact JSON, `fit_plot.png`, and
+`sasview_parameter_values.txt`. The server always generates
+`fit_results.csv`, but only attaches its full numerical table when
+`include_fit_results_file` is true. Bayesian fits return selected posterior
+plots and attach the raw chain only when `include_posterior_chain` is true.
 
 ## Authentication
 
@@ -185,4 +246,3 @@ The script tests all tools against a running server at `http://localhost:8001`. 
 
 Future improvements planned:
 - Run scripts in a separate container for security and isolation
-- Add input parameter validation for all tools

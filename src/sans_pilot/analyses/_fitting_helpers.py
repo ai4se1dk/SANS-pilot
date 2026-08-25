@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import math
 import numbers
+from collections.abc import Iterable
 from typing import Any
 
 _MAX_NORMALIZE_DEPTH = 4
 _MAX_COLLECTION_ITEMS = 100
 _MAX_FALLBACK_CHARS = 1_000
+_NON_ACTIONABLE_WARNING_MESSAGES = frozenset(
+  {"Deprecated: use of problem.fitness will be removed at some point"}
+)
 _OPTIMIZER_METADATA_FIELDS = (
   "success",
   "status",
@@ -19,6 +23,17 @@ _OPTIMIZER_METADATA_FIELDS = (
   "cost",
   "optimality",
 )
+
+
+def filter_actionable_warnings(messages: Iterable[str]) -> list[str]:
+  """Return unique warnings that are useful to the analysis consumer."""
+  return list(
+    dict.fromkeys(
+      message
+      for message in messages
+      if message not in _NON_ACTIONABLE_WARNING_MESSAGES
+    )
+  )
 
 
 def normalize_scalar(value: Any) -> Any:
@@ -234,3 +249,34 @@ def format_fit_result(fit_result: Any) -> dict[str, Any]:
       formatted["optimizer"] = optimizer
 
   return formatted
+
+
+def format_posterior_summary(posterior: Any) -> dict[str, Any]:
+  """Build a compact posterior summary without exposing raw sample arrays."""
+  labels = [str(label) for label in posterior.labels]
+  parameters: dict[str, Any] = {}
+  diagnostics = posterior.diagnostics or {}
+
+  for label in labels:
+    parameter = {
+      "best": normalize_scalar(posterior.best[label]),
+      "mean": normalize_scalar(posterior.mean[label]),
+      "median": normalize_scalar(posterior.median[label]),
+      "std": normalize_scalar(posterior.std[label]),
+      "ci_68": normalize_value(posterior.ci_68[label]),
+      "ci_95": normalize_value(posterior.ci_95[label]),
+    }
+    if label in diagnostics:
+      diagnostic = {
+        key: normalize_scalar(value)
+        for key, value in diagnostics[label].items()
+        if key in {"r_hat", "ess"}
+      }
+      if diagnostic:
+        parameter["diagnostics"] = diagnostic
+    parameters[label] = parameter
+
+  return {
+    "samples": normalize_scalar(posterior.n_samples),
+    "parameters": parameters,
+  }
