@@ -43,14 +43,24 @@ def resolve_uploaded_path(path_or_name: str, user_id: str | None = None) -> Path
     FileNotFoundError: If file cannot be found
   """
   p = Path(path_or_name)
-  if p.is_absolute():
-    return p
+  uploads_dir = get_uploads_dir(user_id).resolve()
 
-  uploads_dir = get_uploads_dir(user_id)
+  if p.is_absolute():
+    candidate = p.resolve()
+    if not candidate.is_relative_to(uploads_dir):
+      raise ValueError(
+        f"Uploaded file path must be within the current user's upload directory: "
+        f"{uploads_dir}"
+      )
+    if candidate.is_file():
+      return candidate
+    raise FileNotFoundError(f"Uploaded file '{path_or_name}' does not exist.")
 
   # Direct relative path within uploads dir
-  direct_path = uploads_dir / p
-  if direct_path.exists():
+  direct_path = (uploads_dir / p).resolve()
+  if not direct_path.is_relative_to(uploads_dir):
+    raise ValueError("Uploaded file path cannot leave the upload directory.")
+  if direct_path.is_file():
     return direct_path
 
   # Search by filename

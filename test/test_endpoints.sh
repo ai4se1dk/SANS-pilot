@@ -78,6 +78,14 @@ echo
 # Get first CSV file for run-analysis tests
 CSV_FILE=$(mcp_call 7 "tools/call" '{"name":"list-uploaded-files","arguments":{"extensions":["csv"],"limit":1}}' | jq -r '.result.content[0].text | fromjson | .[0].name // empty')
 
+echo "6a. inspect-sans-data"
+if [ -n "$CSV_FILE" ]; then
+  mcp_call 70 "tools/call" "{\"name\":\"inspect-sans-data\",\"arguments\":{\"input_file\":\"$CSV_FILE\"}}" | jq .
+else
+  echo "   SKIPPED - no SANS data files found in uploads"
+fi
+echo
+
 # Get cylinder model parameters for param_overrides
 echo "7. Fetching cylinder model parameters for run-analysis"
 PARAMS_RESPONSE=$(mcp_call 8 "tools/call" '{"name":"get-model-parameters","arguments":{"model_name":"cylinder"}}')
@@ -103,10 +111,13 @@ if [ -n "$CSV_FILE" ]; then
     \"arguments\":{
       \"name\":\"fitting-with-custom-model\",
       \"parameters\":{
-        \"input_csv\":\"$CSV_FILE\",
+        \"input_file\":\"$CSV_FILE\",
         \"model\":\"cylinder\",
         \"engine\":\"bumps\",
         \"method\":\"amoeba\",
+        \"q_min\":0.01,
+        \"q_max\":0.3,
+        \"include_fit_results_file\":true,
         \"param_overrides\":$CYLINDER_PARAMS
       }
     }
@@ -123,11 +134,16 @@ if [ -n "$CSV_FILE" ]; then
     [(.result.content // [])[] | tostring]
     | any(test("sasview_parameter_values\\.txt"))
   ')
+  HAS_RESULTS_FILE=$(echo "$RUN_ANALYSIS_RESPONSE" | jq -r '
+    [(.result.content // [])[] | tostring]
+    | any(test("fit_results\\.csv"))
+  ')
 
-  if [ "$HAS_PARAM_FILE" = "true" ] || [ "$HAS_PARAM_PREFIX_TEXT" = "true" ]; then
+  if { [ "$HAS_PARAM_FILE" = "true" ] || [ "$HAS_PARAM_PREFIX_TEXT" = "true" ]; } && [ "$HAS_RESULTS_FILE" = "true" ]; then
     echo "   ✅ Parameter export output is present in MCP response"
+    echo "   ✅ Fit results CSV is present in MCP response"
   else
-    echo "   ❌ Parameter export output missing from MCP response"
+    echo "   ❌ Required fit artifacts are missing from MCP response"
     echo "   Debug content entries:"
     echo "$RUN_ANALYSIS_RESPONSE" | jq '.result.content // []'
     exit 1
@@ -165,7 +181,7 @@ if [ -n "$CSV_FILE" ]; then
     \"arguments\":{
       \"name\":\"fitting-with-custom-model\",
       \"parameters\":{
-        \"input_csv\":\"$CSV_FILE\",
+        \"input_file\":\"$CSV_FILE\",
         \"model\":\"cylinder\",
         \"engine\":\"bumps\",
         \"method\":\"amoeba\",
@@ -195,7 +211,7 @@ echo
 #     \"arguments\":{
 #       \"name\":\"fitting-with-custom-model\",
 #       \"parameters\":{
-#         \"input_csv\":\"$CSV_FILE\",
+#         \"input_file\":\"$CSV_FILE\",
 #         \"model\":\"cylinder\",
 #         \"engine\":\"bumps\",
 #         \"method\":\"amoeba\",
@@ -262,7 +278,7 @@ if [ -n "$CSV_FILE" ]; then
     \"arguments\":{
       \"name\":\"fitting-with-custom-model\",
       \"parameters\":{
-        \"input_csv\":\"$CSV_FILE\",
+        \"input_file\":\"$CSV_FILE\",
         \"model\":\"sphere\",
         \"engine\":\"bumps\",
         \"method\":\"amoeba\",
@@ -289,7 +305,7 @@ if [ -n "$CSV_FILE" ]; then
     \"arguments\":{
       \"name\":\"fitting-with-custom-model\",
       \"parameters\":{
-        \"input_csv\":\"$CSV_FILE\",
+        \"input_file\":\"$CSV_FILE\",
         \"model\":\"sphere\",
         \"engine\":\"bumps\",
         \"method\":\"amoeba\",
@@ -316,7 +332,7 @@ if [ -n "$CSV_FILE" ]; then
     \"arguments\":{
       \"name\":\"fitting-with-custom-model\",
       \"parameters\":{
-        \"input_csv\":\"$CSV_FILE\",
+        \"input_file\":\"$CSV_FILE\",
         \"model\":\"sphere\",
         \"engine\":\"bumps\",
         \"method\":\"amoeba\",
