@@ -5,7 +5,11 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
+
+import numpy as np
+from fastmcp.utilities.types import Image
 
 from sans_pilot import main
 
@@ -18,7 +22,9 @@ def _write_sans_csv(path: Path, *, intensity: float = 1.0) -> None:
 
 def test_inspect_sans_data_tool_is_registered():
   tools = asyncio.run(main.mcp.list_tools())
-  assert "inspect-sans-data" in {tool.name for tool in tools}
+  tool_names = {tool.name for tool in tools}
+  assert "inspect-sans-data" in tool_names
+  assert "plot-sans-data" in tool_names
 
 
 def test_inspect_sans_data_returns_bounded_metadata(tmp_path, monkeypatch):
@@ -37,6 +43,109 @@ def test_inspect_sans_data_returns_bounded_metadata(tmp_path, monkeypatch):
   assert result["points_total"] == 10
   assert result["has_intensity_errors"] is True
   assert result["has_q_resolution"] is False
+
+
+def test_render_data_only_plot_never_configures_or_fits_model(tmp_path, monkeypatch):
+  q = np.linspace(0.01, 0.1, 10)
+  data = SimpleNamespace(
+    x=q,
+    y=np.linspace(10.0, 1.0, 10),
+    dy=np.full(10, 0.1),
+    dx=np.full(10, 0.001),
+    dxl=None,
+    dxw=None,
+    mask=np.zeros(10, dtype=bool),
+    qmin=float(q.min()),
+    qmax=float(q.max()),
+  )
+  calls: dict[str, Any] = {}
+
+  class Figure:
+    def update_layout(self, **kwargs):
+      calls["layout"] = kwargs
+
+    def write_image(self, path):
+      Path(path).write_bytes(b"png")
+
+  class Fitter:
+    def set_data(self, value):
+      calls["data"] = value
+
+    def set_model(self, *_args, **_kwargs):
+      raise AssertionError("plot-only workflow must not configure a model")
+
+    def fit(self, *_args, **_kwargs):
+      raise AssertionError("plot-only workflow must not perform a fit")
+
+    def fit_bayesian(self, *_args, **_kwargs):
+      raise AssertionError("plot-only workflow must not perform a Bayesian fit")
+
+    def plot_results(self, **kwargs):
+      calls["plot"] = kwargs
+      return Figure()
+
+  monkeypatch.setattr(main.data_ops, "load", lambda _path: data)
+  monkeypatch.setattr(main, "SANSFitter", Fitter)
+  output_path = tmp_path / "sans_data_plot.png"
+
+  result = main._render_data_only_plot(
+    input_path=tmp_path / "sample.csv",
+    output_path=output_path,
+    log_scale=False,
+  )
+
+  assert calls["data"] is data
+  assert calls["plot"] == {
+    "show_residuals": False,
+    "log_scale": False,
+    "show": False,
+  }
+  assert calls["layout"] == {"height": 500, "width": 900}
+  assert output_path.read_bytes() == b"png"
+  assert result["plot"] == {
+    "type": "data_only",
+    "log_scale": False,
+    "fit_performed": False,
+  }
+  assert result["has_intensity_errors"] is True
+  assert result["has_q_resolution"] is True
+
+
+def test_plot_sans_data_returns_summary_and_image(tmp_path, monkeypatch):
+  uploads = tmp_path / "uploads"
+  user_dir = uploads / "user-1"
+  user_dir.mkdir(parents=True)
+  _write_sans_csv(user_dir / "sample.csv")
+  captured: dict[str, Any] = {}
+
+  def fake_render(*, input_path, output_path, log_scale):
+    captured["input_path"] = input_path
+    captured["output_path"] = output_path
+    captured["log_scale"] = log_scale
+    output_path.write_bytes(b"png")
+    return {
+      "file_name": input_path.name,
+      "plot": {
+        "type": "data_only",
+        "log_scale": log_scale,
+        "fit_performed": False,
+      },
+    }
+
+  monkeypatch.setenv("UPLOAD_DIR", str(uploads))
+  monkeypatch.setenv("SANS_PILOT_RUNS_DIR", str(tmp_path / "runs"))
+  monkeypatch.setattr(main, "get_user_id_from_request", lambda: "user-1")
+  monkeypatch.setattr(main, "_render_data_only_plot", fake_render)
+
+  response = asyncio.run(cast(Any, main.plot_sans_data)("sample.csv", log_scale=False))
+
+  summary = json.loads(response[0])
+  assert summary["plot"]["fit_performed"] is False
+  assert captured["input_path"].is_file()
+  assert captured["input_path"].parent.name != user_dir.name
+  assert captured["log_scale"] is False
+  assert isinstance(response[1], Image)
+  assert response[1].path == captured["output_path"]
 
 
 def test_run_analysis_copies_primary_and_auxiliary_inputs(tmp_path, monkeypatch):
