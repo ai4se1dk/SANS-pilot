@@ -35,18 +35,21 @@ SANS (Small-Angle Neutron Scattering) data analysis server.
 ## Workflow
 1. `list-uploaded-files` - Find the user's SANS data files
 2. `inspect-sans-data` - Inspect Q range, uncertainties, resolution, and validity
-3. `list-analyses` - Discover valid analysis names and parameters
-4. `list-sans-models` - Show available models (cylinder, sphere, ellipsoid, etc.)
-5. `get-model-parameters` - Get parameter specs for a model
-6. `run-analysis` - Run optimization or Bayesian fitting, with optional preprocessing
+3. `plot-sans-data` - Plot measured data without selecting or fitting a model
+4. `list-analyses` - Discover valid fitting analysis names and parameters
+5. `list-sans-models` - Show available models (cylinder, sphere, ellipsoid, etc.)
+6. `get-model-parameters` - Get parameter specs for a model
+7. `run-analysis` - Run optimization or Bayesian fitting, with optional preprocessing
 
 ## Tool Calling Rule
+- If the user explicitly asks to plot, visualize, or inspect data without fitting, call `plot-sans-data`; do not call model-discovery tools or `run-analysis`
 - Never call `run-analysis` with a guessed `name`
 - Always call `list-analyses` first and use an exact key from that response
 
 ## Low-Friction First Run
-- If user asks to run analysis without specifying a model, do not block for model selection
+- If the user asks for a fit or analysis without specifying a model, do not block for model selection
 - Use the latest uploaded SANS data file, inspect it, choose a valid analysis from `list-analyses`, and run an initial baseline fit
+- An explicit plot-only or no-fit request always overrides the baseline-fit workflow
 - Ask follow-up questions only when there is no usable file or tool execution fails
 
 ## Key Tools
@@ -107,6 +110,7 @@ def describe_possibilities() -> str:
     "list-analyses (see available analysis types), "
     "list-uploaded-files (find data files), "
     "inspect-sans-data (inspect Q range, uncertainties, and resolution), "
+    "plot-sans-data (plot measured data without fitting a model), "
     "run-analysis (execute optimization or Bayesian fitting with optional preprocessing), "
     "calculate-sld (compute neutron SLD for a molecular formula and density)."
   )
@@ -324,6 +328,83 @@ def _copy_run_input(source: Path, destination: Path) -> Path:
   return destination
 
 
+def _create_run_directory(operation_name: str) -> Path:
+  """Create an isolated output directory for one MCP operation."""
+  runs_dir = Path(os.environ.get("SANS_PILOT_RUNS_DIR", "/tmp/sans-pilot-runs"))
+  out_dir = runs_dir / _safe_run_filename_component(operation_name) / uuid.uuid4().hex
+  out_dir.mkdir(parents=True, exist_ok=True)
+  return out_dir
+
+
+def _render_data_only_plot(
+  *,
+  input_path: Path,
+  output_path: Path,
+  log_scale: bool,
+) -> dict[str, Any]:
+  """Render measured SANS data without configuring or fitting a model."""
+  with warnings.catch_warnings(record=True) as captured:
+    warnings.simplefilter("always")
+    data = data_ops.load(str(input_path))
+    fitter = SANSFitter()
+    fitter.set_data(data)
+    figure = fitter.plot_results(
+      show_residuals=False,
+      log_scale=log_scale,
+      show=False,
+    )
+    figure.update_layout(height=500, width=900)
+    figure.write_image(output_path)
+
+  result = inspect_data(data, source_path=input_path)
+  result["plot"] = {
+    "type": "data_only",
+    "log_scale": log_scale,
+    "fit_performed": False,
+  }
+  warning_messages = list(dict.fromkeys(str(item.message) for item in captured))
+  if warning_messages:
+    result["warnings"] = warning_messages
+  return result
+
+
+@mcp.tool(
+  name="plot-sans-data",
+  description=(
+    "Plot an uploaded SANS dataset without selecting a model or performing a fit. "
+    "Returns measured intensity with available dI and dQ error bars, a compact "
+    "data summary, and a PNG plot with no fitted curve or residuals. Accepts "
+    "CSV, CanSAS XML, and NXcanSAS/HDF5. Use log_scale=false for linear axes."
+  ),
+)
+async def plot_sans_data(
+  input_file: str,
+  log_scale: bool = True,
+) -> list[str | Image]:
+  """Plot a user-scoped uploaded dataset without fitting it."""
+  if not isinstance(input_file, str) or not input_file.strip():
+    raise ValueError("input_file must name an uploaded SANS data file.")
+  if not isinstance(log_scale, bool):
+    raise TypeError("log_scale must be true or false.")
+
+  user_id = get_user_id_from_request()
+  resolved_input = resolve_uploaded_path(input_file.strip(), user_id=user_id)
+  out_dir = _create_run_directory("plot-sans-data")
+  copied_input = _copy_run_input(resolved_input, out_dir / resolved_input.name)
+  plot_path = out_dir / "sans_data_plot.png"
+
+  result = await asyncio.to_thread(
+    _render_data_only_plot,
+    input_path=copied_input,
+    output_path=plot_path,
+    log_scale=log_scale,
+  )
+  return [
+    json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True),
+    Image(path=str(plot_path)),
+  ]
+
+
 @mcp.tool(
   name="run-analysis",
   description=(
@@ -377,14 +458,8 @@ async def run_analysis(
       user_id=user_id,
     )
 
-  # Create output directory
-  runs_dir = Path(os.environ.get("SANS_PILOT_RUNS_DIR", "/tmp/sans-pilot-runs"))
-  runs_dir.mkdir(parents=True, exist_ok=True)
-  run_id = (
-    uuid.uuid4().hex
-  )  # Unique ID for this run to avoid collisions in parallel executions
-  out_dir = runs_dir / name.replace("/", "_") / run_id
-  out_dir.mkdir(parents=True, exist_ok=True)
+  # Create an isolated output directory for this run.
+  out_dir = _create_run_directory(name)
   parameters["output_dir"] = str(out_dir)
 
   # Copy every input into the run directory so concurrent analyses are isolated.

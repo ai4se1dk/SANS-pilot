@@ -15,16 +15,32 @@ MCP server for SANS (Small-Angle Neutron Scattering) data analysis, powered by [
 | `get-polydispersity-options`      | Get available PD distribution types (gaussian, lognormal, etc.) and defaults |
 | `list-uploaded-files`             | List uploaded data files (optional: filter by extension, limit)              |
 | `inspect-sans-data`               | Inspect Q range, dI, dQ, and invalid points without fitting                  |
+| `plot-sans-data`                  | Plot measured SANS data without selecting or fitting a model                 |
 | `list-analyses`                   | List available analysis types with parameters                                |
 | `run-analysis`                    | Run optimization or Bayesian fitting and return results plus artifacts       |
 
 ## Typical Workflow
 
-1. **Discover models**: Call `list-sans-models` to see available sasmodels
-2. **Get parameters**: Call `get-model-parameters` with model name to see default params
-3. **Find data**: Call `list-uploaded-files` to find your SANS data file
-4. **Inspect data**: Call `inspect-sans-data` to check Q range, dI, and dQ
-5. **Run fit**: Call `run-analysis` with analysis name, input file, model, and param overrides
+1. **Find data**: Call `list-uploaded-files` to find your SANS data file.
+2. **Inspect data**: Call `inspect-sans-data` to check Q range, dI, and dQ.
+3. **Plot only**: Call `plot-sans-data` when the user wants to visualize measured data without fitting.
+4. **Fit when requested**: Discover a model and its parameters, then call `run-analysis`.
+
+### Example: Plot data without fitting
+
+Call `plot-sans-data` directly when the user asks to inspect a dataset visually
+without a model, fitted curve, or residuals:
+
+```json
+{
+  "input_file": "simulated_sans_data.csv",
+  "log_scale": true
+}
+```
+
+The response contains a compact data summary and `sans_data_plot.png`. The plot
+shows measured intensity and available dI/dQ error bars only. Set `log_scale` to
+`false` to use linear axes.
 
 ### Example: Fitting cylinder model
 
