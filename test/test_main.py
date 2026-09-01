@@ -239,12 +239,19 @@ def test_plot_sans_data_returns_summary_and_image(tmp_path, monkeypatch):
 
   response = asyncio.run(data_tools.plot_sans_data(pipeline, log_scale=False))
 
-  assert response["configuration"]["fit_performed"] is False
+  assert response.structured_content is not None
+  assert response.structured_content["configuration"]["fit_performed"] is False
   assert captured["pipeline"] == pipeline
   assert captured["user_id"] == "user-1"
   assert captured["log_scale"] is False
-  assert response["artifacts"][0]["name"] == Path(captured["output_path"]).name
-  assert response["artifacts"][0]["uri"].startswith("sans-pilot://artifact/")
+  assert (
+    response.structured_content["artifacts"][0]["name"]
+    == Path(captured["output_path"]).name
+  )
+  assert response.structured_content["artifacts"][0]["uri"].startswith(
+    "sans-pilot://artifact/"
+  )
+  assert any(item.type == "image" for item in response.content)
 
 
 def test_process_sans_data_returns_csv_only_when_explicitly_requested(

@@ -17,7 +17,7 @@ analysis, powered by [SANS-fitter](https://github.com/ai4se1dk/SANS-fitter).
 | `get-sans-model-parameters` | Discover an exact atomic, interacting, or composite model contract |
 | `list-structure-factors` | List supported inter-particle interaction models |
 | `get-polydispersity-options` | List size-distribution types and defaults |
-| `fit-sans-model` | Run explicitly weighted optimization or Bayesian fitting |
+| `fit-sans-model` | Run optimization or Bayesian fitting through sans-fitter |
 | `scan-sans-dmax` | Explore Dmax using Rg, I(0), fit-quality, and positivity trends |
 | `invert-sans-pr` | Recover the model-free real-space pair distribution P(r) |
 | `list-sans-examples` | Discover curated measured and simulated datasets |
@@ -69,15 +69,15 @@ by `sans-fitter`.
 }
 ```
 
-`plot-sans-data` returns metadata and a lazy MCP resource link for
-`sans_data_plot.png`; it never selects a model or performs a fit. Binary image
-payloads are not embedded in the primary tool result.
+`plot-sans-data` returns metadata, an inline MCP image for immediate display,
+and a lazy resource URI for `sans_data_plot.png`; it never selects a model or
+performs a fit.
 
 ## Model discovery and fitting
 
 Call `get-sans-model-parameters` with the exact model specification you intend
-to fit. It returns valid parameter names, defaults, bounds, polydispersity
-support, component aliases, links, and engine restrictions.
+to fit. It returns parameter names, defaults, bounds, polydispersity support,
+component aliases, and links reported by the configured sans-fitter model.
 
 ### Atomic model fit
 
@@ -138,8 +138,8 @@ Supported structure factors are `hardsphere`, `hayter_msa`, `squarewell`, and
 
 ### Composite model
 
-Composite models combine two to five uniquely named components. Shared
-parameters and equality links must have a scientific justification.
+Composite models combine uniquely named components. Shared parameters and
+equality links must have a scientific justification.
 
 ```json
 {
@@ -179,12 +179,13 @@ Bayesian fitting uses the BUMPS DREAM integration provided by `sans-fitter`.
 The compact response serializes the posterior summary and diagnostics returned
 by `sans-fitter`; raw samples are not placed in model context.
 
-Every fit returns compact structured JSON with lazy MCP resource URIs for
-`fit_plot.png` and other generated files. Atomic fits include a URI for
-`sasview_parameter_values.txt` by default. Artifact bytes are not included in
-the original tool response. `fit_results.csv` and
+Every fit returns compact structured JSON, inline MCP image content for plots,
+and lazy MCP resource URIs for all generated files. Atomic fits include a URI
+for `sasview_parameter_values.txt` by default. CSV and text artifact bytes are
+not included in the original tool response. `fit_results.csv` and
 `posterior_chain.csv` are generated only when explicitly requested. Resource
-links are opaque and user-scoped, avoiding oversized inline image blocks.
+URIs are opaque and user-scoped; non-image artifacts remain lazy so their
+contents do not consume model context.
 
 ## Model-free P(r) inversion
 
@@ -243,8 +244,8 @@ loading. 2D SANS and SESANS are rejected with actionable messages.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `UPLOAD_DIR` | `/uploads` | User-uploaded data directory |
-| `SANS_PILOT_RUNS_DIR` | `/tmp/sans-pilot-runs` | Per-request artifact directory |
-| `SANS_PILOT_ARTIFACT_TTL_SECONDS` | `86400` | Lifetime of published artifact links |
+| `SANS_PILOT_RUNS_DIR` | `/tmp/sans-pilot-runs` | Internal workspace root for generated artifacts |
+| `SANS_PILOT_ARTIFACT_TTL_SECONDS` | `86400` | Lifetime, in seconds, of artifact tokens in the in-memory registry |
 | `API_TOKEN` | unset | Optional bearer token |
 
 ## Local development

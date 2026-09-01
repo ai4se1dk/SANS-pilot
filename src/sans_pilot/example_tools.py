@@ -238,7 +238,7 @@ def _artifact_metadata(artifacts: dict[str, Path]) -> list[dict[str, str]]:
 
 async def simulate_sans_data(
   request: SimulateSansDataRequest,
-) -> dict[str, Any]:
+) -> Any:
   """Generate one SANS dataset with known ground truth."""
   output_dir = create_run_directory("simulate-sans-data")
   user_id = get_user_id_from_request()
@@ -252,7 +252,7 @@ async def simulate_sans_data(
 
 async def simulate_sans_pair(
   request: SimulateSansPairRequest,
-) -> dict[str, Any]:
+) -> Any:
   """Generate reproducible matched sample/background datasets."""
   output_dir = create_run_directory("simulate-sans-pair")
   user_id = get_user_id_from_request()

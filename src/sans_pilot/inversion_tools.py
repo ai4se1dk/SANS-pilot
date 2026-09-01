@@ -13,7 +13,7 @@ from sans_pilot.inversion import invert_sans_pr_service, scan_sans_dmax_service
 from sans_pilot.schemas import InvertSansPrRequest, ScanSansDmaxRequest
 
 
-async def scan_sans_dmax(request: ScanSansDmaxRequest) -> dict[str, Any]:
+async def scan_sans_dmax(request: ScanSansDmaxRequest) -> Any:
   """Scan Dmax to identify stable Rg/I(0), fit-quality, and positivity regions."""
   user_id = get_user_id_from_request()
   result = await asyncio.to_thread(
@@ -25,7 +25,7 @@ async def scan_sans_dmax(request: ScanSansDmaxRequest) -> dict[str, Any]:
   return artifact_result(result["summary"], result["artifacts"], user_id=user_id)
 
 
-async def invert_sans_pr(request: InvertSansPrRequest) -> dict[str, Any]:
+async def invert_sans_pr(request: InvertSansPrRequest) -> Any:
   """Recover the model-free real-space pair distance distribution P(r)."""
   user_id = get_user_id_from_request()
   result = await asyncio.to_thread(

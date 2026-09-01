@@ -7,6 +7,8 @@ import base64
 
 import pytest
 from fastmcp import Client
+from fastmcp.tools import ToolResult
+from mcp.types import ImageContent
 
 from sans_pilot.artifacts import (
   artifact_result,
@@ -15,7 +17,7 @@ from sans_pilot.artifacts import (
 )
 
 
-def test_artifacts_are_lazy_uris_in_plain_results(tmp_path):
+def test_images_are_inline_and_all_artifacts_have_lazy_uris(tmp_path):
   image = tmp_path / "plot.png"
   image.write_bytes(b"png-bytes")
   summary = {
@@ -29,10 +31,12 @@ def test_artifacts_are_lazy_uris_in_plain_results(tmp_path):
     user_id="user-1",
   )
 
-  assert result == summary
-  assert result["artifacts"][0]["uri"].startswith("sans-pilot://artifact/")
+  assert isinstance(result, ToolResult)
+  assert result.structured_content == summary
+  assert any(isinstance(item, ImageContent) for item in result.content)
+  assert summary["artifacts"][0]["uri"].startswith("sans-pilot://artifact/")
 
-  token = result["artifacts"][0]["uri"].rsplit("/", 1)[-1]
+  token = summary["artifacts"][0]["uri"].rsplit("/", 1)[-1]
   assert read_published_artifact(token, user_id="user-1") == b"png-bytes"
   with pytest.raises(PermissionError):
     read_published_artifact(token, user_id="user-2")

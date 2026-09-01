@@ -68,8 +68,10 @@ def test_fit_tool_returns_structured_summary_and_resource_links(tmp_path, monkey
 
   response = asyncio.run(fit_tools.fit_sans_model(_request()))
 
-  assert response["analysis"] == "model_fit"
+  assert response.structured_content is not None
+  assert response.structured_content["analysis"] == "model_fit"
   assert captured["user_id"] == "user-1"
-  artifacts = response["artifacts"]
+  artifacts = response.structured_content["artifacts"]
   assert [item["name"] for item in artifacts] == [plot.name, table.name]
   assert all(item["uri"].startswith("sans-pilot://artifact/") for item in artifacts)
+  assert any(item.type == "image" for item in response.content)

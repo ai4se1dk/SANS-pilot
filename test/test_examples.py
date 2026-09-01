@@ -100,5 +100,9 @@ def test_simulation_tool_attaches_csv_only_when_service_returns_it(
 
   response = asyncio.run(example_tools.simulate_sans_data(request))
 
-  assert response["analysis"] == "data_simulation"
-  assert response["artifacts"][0]["uri"].startswith("sans-pilot://artifact/")
+  assert response.structured_content is not None
+  assert response.structured_content["analysis"] == "data_simulation"
+  assert response.structured_content["artifacts"][0]["uri"].startswith(
+    "sans-pilot://artifact/"
+  )
+  assert any(item.type == "image" for item in response.content)

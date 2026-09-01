@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import mimetypes
 import os
 import re
@@ -11,6 +12,10 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from fastmcp.tools import ToolResult
+from fastmcp.utilities.types import Image
+from mcp.types import TextContent
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,12 +104,12 @@ def artifact_result(
   artifacts: dict[str, Path],
   *,
   user_id: str | None,
-) -> dict[str, Any]:
-  """Add lazy artifact URIs to an ordinary JSON-compatible tool result.
+) -> dict[str, Any] | ToolResult:
+  """Add lazy URIs and inline generated images for immediate scientific review.
 
-  Returning a plain dictionary keeps the response compatible with MCP clients
-  that reject newer ResourceLink content blocks. Artifact bytes are available
-  separately through the registered MCP resource template.
+  Non-image artifacts remain lazy so CSV and text files do not consume model
+  context. ResourceLink content blocks are avoided because older MCP clients
+  reject them; image content blocks are broadly supported by chat clients.
   """
   uri_by_name = {
     name: publish_artifact(path, user_id=user_id) for name, path in artifacts.items()
@@ -112,4 +117,16 @@ def artifact_result(
   for metadata in summary.get("artifacts", []):
     if isinstance(metadata, dict) and metadata.get("name") in uri_by_name:
       metadata["uri"] = uri_by_name[metadata["name"]]
-  return summary
+
+  image_paths = [path for path in artifacts.values() if path.suffix.lower() == ".png"]
+  if not image_paths:
+    return summary
+
+  text = json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True)
+  return ToolResult(
+    content=[
+      TextContent(type="text", text=text),
+      *(Image(path=path).to_image_content() for path in image_paths),
+    ],
+    structured_content=summary,
+  )

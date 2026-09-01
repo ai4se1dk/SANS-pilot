@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import io
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from fastmcp import FastMCP
 from pydantic import Field
@@ -162,7 +162,7 @@ def _render_data_only_plot(
 async def plot_sans_data(
   pipeline: DatasetPipeline,
   log_scale: bool = True,
-) -> dict[str, Any]:
+) -> Any:
   """Plot data from a typed pipeline without selecting or fitting a model."""
   output_dir = create_run_directory("plot-sans-data")
   plot_path = output_dir / "sans_data_plot.png"
@@ -222,7 +222,7 @@ async def process_sans_data(
     include_processed_csv=include_processed_csv,
   )
   artifacts = {output_path.name: output_path} if include_processed_csv else {}
-  return artifact_result(result, artifacts, user_id=user_id)
+  return cast(dict[str, Any], artifact_result(result, artifacts, user_id=user_id))
 
 
 def register_data_tools(mcp: FastMCP) -> None:

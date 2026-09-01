@@ -13,7 +13,7 @@ from sans_pilot.fitting import run_typed_fit
 from sans_pilot.schemas import FitSansModelRequest
 
 
-async def fit_sans_model(request: FitSansModelRequest) -> dict[str, Any]:
+async def fit_sans_model(request: FitSansModelRequest) -> Any:
   """Fit a typed atomic, interacting, or composite sasmodels model."""
   output_dir = create_run_directory("fit-sans-model")
   user_id = get_user_id_from_request()
