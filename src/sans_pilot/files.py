@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from fastmcp.server.dependencies import get_http_request
 from starlette.requests import Request
@@ -24,7 +26,10 @@ def get_uploads_dir(user_id: str | None = None) -> Path:
 
 def get_user_id_from_request() -> str | None:
   """Extract user ID from the current HTTP request headers."""
-  request: Request = get_http_request()
+  try:
+    request: Request = get_http_request()
+  except RuntimeError:
+    return None
   return request.headers.get("x-user-id")
 
 
@@ -70,9 +75,46 @@ def resolve_uploaded_path(path_or_name: str, user_id: str | None = None) -> Path
   if len(matches) > 1:
     raise ValueError(
       f"Ambiguous filename '{p.name}' (found {len(matches)} matches). "
-      "Use the full relative path returned by list-uploaded-files."
+      "Use the full relative path returned by list-uploaded-sans-files."
     )
 
   raise FileNotFoundError(
     f"Uploaded file '{path_or_name}' not found under {uploads_dir}"
   )
+
+
+def list_user_uploads(
+  *,
+  user_id: str | None,
+  extensions: set[str] | None,
+  limit: int,
+) -> list[dict[str, Any]]:
+  """List current-user uploads without reading or exposing file contents."""
+  uploads_dir = get_uploads_dir(user_id)
+  candidates: list[tuple[float, Path, int]] = []
+
+  for file_path in uploads_dir.rglob("*"):
+    if not file_path.is_file():
+      continue
+    extension = file_path.suffix.lower().lstrip(".")
+    if extensions is not None and extension not in extensions:
+      continue
+    stat = file_path.stat()
+    candidates.append((stat.st_mtime, file_path, stat.st_size))
+
+  results: list[dict[str, Any]] = []
+  for modified_time, file_path, size in sorted(candidates, reverse=True):
+    stored_name = file_path.name
+    original_name = stored_name.split("__", 1)[-1]
+    results.append(
+      {
+        "original_name": original_name,
+        "file": str(file_path.relative_to(uploads_dir)),
+        "extension": file_path.suffix.lower().lstrip("."),
+        "bytes": size,
+        "modified_at": datetime.fromtimestamp(modified_time, tz=UTC).isoformat(),
+      }
+    )
+    if len(results) >= limit:
+      break
+  return results

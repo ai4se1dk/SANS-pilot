@@ -1,4 +1,4 @@
-"""Tests for normalization helpers in fitting-with-custom-model."""
+"""Tests for fitting-result normalization helpers."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ def test_filter_actionable_warnings_ignores_known_bumps_deprecation():
   result = filter_actionable_warnings(
     [
       "Deprecated: use of problem.fitness will be removed at some point",
+      "\nSupport for the 'engine' argument is deprecated and will be removed.\n",
       "Resolution data was not propagated",
       "Resolution data was not propagated",
     ]

@@ -1,15 +1,17 @@
 [project]
 name = "sans-pilot"
-version = "0.8.0"
+version = "0.9.0"
 description = "MCP server for SANS data analysis"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "fastmcp>=3.0.0b1",
-    "sans-fitter>=0.2.2,<0.3",
+    "sans-fitter==0.3.0",
     "bumps==1.0.3",
     "kaleido>=1.2.0",
-    "periodictable>=1.7.0",
+    "plotly>=6.0",
+    "pydantic>=2.0",
+    "sasdata>=0.8",
 ]
 
 [project.optional-dependencies]

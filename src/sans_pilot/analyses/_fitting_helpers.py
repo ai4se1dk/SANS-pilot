@@ -13,6 +13,7 @@ _MAX_FALLBACK_CHARS = 1_000
 _NON_ACTIONABLE_WARNING_MESSAGES = frozenset(
   {"Deprecated: use of problem.fitness will be removed at some point"}
 )
+_NON_ACTIONABLE_WARNING_PREFIXES = ("Support for the 'engine' argument is deprecated",)
 _OPTIMIZER_METADATA_FIELDS = (
   "success",
   "status",
@@ -27,11 +28,15 @@ _OPTIMIZER_METADATA_FIELDS = (
 
 def filter_actionable_warnings(messages: Iterable[str]) -> list[str]:
   """Return unique warnings that are useful to the analysis consumer."""
-  return list(
-    dict.fromkeys(
-      message for message in messages if message not in _NON_ACTIONABLE_WARNING_MESSAGES
-    )
-  )
+  actionable: list[str] = []
+  for raw_message in messages:
+    message = raw_message.strip()
+    if not message or message in _NON_ACTIONABLE_WARNING_MESSAGES:
+      continue
+    if message.startswith(_NON_ACTIONABLE_WARNING_PREFIXES):
+      continue
+    actionable.append(message)
+  return list(dict.fromkeys(actionable))
 
 
 def normalize_scalar(value: Any) -> Any:

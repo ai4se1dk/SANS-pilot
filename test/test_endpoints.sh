@@ -1,39 +1,23 @@
 #!/bin/bash
-# Test script for sans-pilot MCP endpoints
-# Usage: ./test_endpoints.sh [base_url]
-# Requires: curl, jq
+# Smoke-test the direct typed sans-pilot MCP contract.
 
-set -e
+set -euo pipefail
 
 BASE_URL="${1:-http://localhost:8001}"
 MCP_ENDPOINT="$BASE_URL/mcp"
 
-echo "=== Testing sans-pilot at $BASE_URL ==="
-echo
-
-# Helper to extract JSON from SSE response
 parse_sse() {
   grep -o 'data: .*' | sed 's/data: //'
 }
 
-# Initialize session - get session ID from response header
-echo "0. Initialize session"
+echo "0. Initialize MCP session"
 INIT_RESPONSE=$(curl -s -i -X POST "$MCP_ENDPOINT" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}')
-
+  -d '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"sans-pilot-smoke","version":"1.0"}}}')
 SESSION_ID=$(echo "$INIT_RESPONSE" | grep -i "mcp-session-id:" | cut -d' ' -f2 | tr -d '\r')
-echo "$INIT_RESPONSE" | parse_sse | jq .
+test -n "$SESSION_ID"
 
-if [ -z "$SESSION_ID" ]; then
-  echo "Failed to get session ID"
-  exit 1
-fi
-echo "Session ID: $SESSION_ID"
-echo
-
-# Helper function for MCP calls
 mcp_call() {
   local id=$1
   local method=$2
@@ -45,310 +29,63 @@ mcp_call() {
     -d "{\"jsonrpc\":\"2.0\",\"id\":$id,\"method\":\"$method\",\"params\":$params}" | parse_sse
 }
 
-# Test tools/list
-echo "1. tools/list"
-mcp_call 1 "tools/list" "{}" | jq .
-echo
+echo "1. List tools"
+TOOLS=$(mcp_call 1 "tools/list" '{}')
+echo "$TOOLS" | jq .
+for name in describe-sans-capabilities list-supported-sans-formats \
+  list-uploaded-sans-files inspect-sans-data plot-sans-data process-sans-data \
+  list-sans-models get-sans-model-parameters list-structure-factors \
+  get-polydispersity-options fit-sans-model \
+  scan-sans-dmax invert-sans-pr list-sans-examples inspect-sans-example \
+  simulate-sans-data simulate-sans-pair; do
+  echo "$TOOLS" | jq -e --arg name "$name" '.result.tools | any(.name == $name)' >/dev/null
+done
+for removed in list-analyses run-analysis get-model-parameters \
+  get-structure-factor-parameters get-polydisperse-parameters; do
+  echo "$TOOLS" | jq -e --arg name "$removed" '.result.tools | any(.name == $name) | not' >/dev/null
+done
 
-# Test describe-possibilities
-echo "2. describe-possibilities"
-mcp_call 2 "tools/call" '{"name":"describe-possibilities","arguments":{}}' | jq .
-echo
+echo "2. Inspect deterministic simulated data"
+mcp_call 2 "tools/call" '{"name":"inspect-sans-data","arguments":{"pipeline":{"primary":{"kind":"simulation","model":"sphere","parameters":{"radius":50},"points":30,"seed":42}}}}' | jq .
 
-# Test list-sans-models
-echo "3. list-sans-models"
-mcp_call 3 "tools/call" '{"name":"list-sans-models","arguments":{}}' | jq .
-echo
+echo "3. Discover atomic model parameters"
+mcp_call 3 "tools/call" '{"name":"get-sans-model-parameters","arguments":{"model":{"kind":"atomic","model":"cylinder"}}}' | jq .
 
-# Test get-model-parameters
-echo "4. get-model-parameters (cylinder)"
-mcp_call 4 "tools/call" '{"name":"get-model-parameters","arguments":{"model_name":"cylinder"}}' | jq .
-echo
+echo "4. Discover interacting model parameters"
+mcp_call 4 "tools/call" '{"name":"get-sans-model-parameters","arguments":{"model":{"kind":"atomic","model":"sphere","structure_factor":"hardsphere","radius_effective_mode":"link_radius"}}}' | jq .
 
-# Test list-analyses
-echo "5. list-analyses"
-mcp_call 5 "tools/call" '{"name":"list-analyses","arguments":{}}' | jq .
-echo
+echo "5. Discover composite model parameters"
+mcp_call 5 "tools/call" '{"name":"get-sans-model-parameters","arguments":{"model":{"kind":"composite","operation":"+","components":[{"alias":"small","model":"sphere"},{"alias":"long","model":"cylinder"}],"shared_parameters":["sld","sld_solvent"]}}}' | jq .
 
-# Test list-uploaded-files
-echo "6. list-uploaded-files"
-mcp_call 6 "tools/call" '{"name":"list-uploaded-files","arguments":{"extensions":["csv"]}}' | jq .
-echo
+echo "6. Run typed optimization fit"
+FIT_RESPONSE=$(mcp_call 6 "tools/call" '{
+  "name":"fit-sans-model",
+  "arguments":{"request":{
+    "pipeline":{"primary":{"kind":"simulation","model":"sphere","parameters":{"radius":50,"scale":0.1,"background":0.001},"points":40,"noise":0.03,"seed":42}},
+    "model":{"kind":"atomic","model":"sphere"},
+    "parameters":{
+      "radius":{"value":40,"min":10,"max":100,"vary":true},
+      "scale":{"value":0.08,"min":0.001,"max":1,"vary":true},
+      "background":{"value":0.002,"min":0,"max":0.1,"vary":true}
+    },
+    "fit":{"mode":"optimization","engine":"bumps","method":"amoeba"},
+    "artifacts":{"include_results_csv":true}
+  }}
+}')
+echo "$FIT_RESPONSE" | jq .
+echo "$FIT_RESPONSE" | jq -e '[.result.content[] | tostring] | any(test("fit_plot\\.png"))' >/dev/null
+echo "$FIT_RESPONSE" | jq -e '[.result.content[] | tostring] | any(test("fit_results\\.csv"))' >/dev/null
+echo "$FIT_RESPONSE" | jq -e '[.result.content[] | tostring] | any(test("sasview_parameter_values\\.txt"))' >/dev/null
 
-# Get first CSV file for run-analysis tests
-CSV_FILE=$(mcp_call 7 "tools/call" '{"name":"list-uploaded-files","arguments":{"extensions":["csv"],"limit":1}}' | jq -r '.result.content[0].text | fromjson | .[0].name // empty')
+echo "7. Discover and inspect curated examples"
+mcp_call 7 "tools/call" '{"name":"list-sans-examples","arguments":{"tag":"biology"}}' | jq .
+mcp_call 8 "tools/call" '{"name":"inspect-sans-example","arguments":{"name":"protein"}}' | jq .
 
-echo "6a. inspect-sans-data"
-if [ -n "$CSV_FILE" ]; then
-  mcp_call 70 "tools/call" "{\"name\":\"inspect-sans-data\",\"arguments\":{\"input_file\":\"$CSV_FILE\"}}" | jq .
-else
-  echo "   SKIPPED - no SANS data files found in uploads"
-fi
-echo
+echo "8. Generate reproducible simulated data"
+mcp_call 9 "tools/call" '{"name":"simulate-sans-data","arguments":{"request":{"source":{"kind":"simulation","model":"sphere","parameters":{"radius":50},"points":25,"noise":0.02,"seed":42},"include_csv":false}}}' | jq .
 
-# Get cylinder model parameters for param_overrides
-echo "7. Fetching cylinder model parameters for run-analysis"
-PARAMS_RESPONSE=$(mcp_call 8 "tools/call" '{"name":"get-model-parameters","arguments":{"model_name":"cylinder"}}')
-# Extract the text content and parse as JSON
-CYLINDER_PARAMS=$(echo "$PARAMS_RESPONSE" | jq -c '.result.content[0].text | fromjson // {}')
-# Set vary=true for key fitting parameters and remove 'description' field (not accepted by set_param)
-CYLINDER_PARAMS=$(echo "$CYLINDER_PARAMS" | jq -c '
-  walk(if type == "object" then del(.description) else . end) |
-  .radius.vary = true |
-  .length.vary = true |
-  .scale.vary = true |
-  .background.vary = true
-')
-echo "   Model parameters (filtered + vary=true): $CYLINDER_PARAMS"
-echo
+echo "9. Scan Dmax and invert P(r)"
+mcp_call 10 "tools/call" '{"name":"scan-sans-dmax","arguments":{"request":{"pipeline":{"primary":{"kind":"example","name":"protein"},"q_max":0.25},"d_max_guess":120,"d_min":100,"d_max":140,"points":5,"fit_background":false,"plot_quantity":"all"}}}' | jq .
+mcp_call 11 "tools/call" '{"name":"invert-sans-pr","arguments":{"request":{"pipeline":{"primary":{"kind":"example","name":"protein"},"q_max":0.25},"d_max":120,"selection":{"mode":"automatic"},"fit_background":false,"plot_log_scale":false}}}' | jq .
 
-# Test run-analysis with fitting-with-custom-model using fetched parameters
-echo "8. run-analysis (fitting-with-custom-model, cylinder)"
-if [ -n "$CSV_FILE" ]; then
-  echo "   Using file: $CSV_FILE"
-  RUN_ANALYSIS_RESPONSE=$(mcp_call 9 "tools/call" "{
-    \"name\":\"run-analysis\",
-    \"arguments\":{
-      \"name\":\"fitting-with-custom-model\",
-      \"parameters\":{
-        \"input_file\":\"$CSV_FILE\",
-        \"model\":\"cylinder\",
-        \"engine\":\"bumps\",
-        \"method\":\"amoeba\",
-        \"q_min\":0.01,
-        \"q_max\":0.3,
-        \"include_fit_results_file\":true,
-        \"param_overrides\":$CYLINDER_PARAMS
-      }
-    }
-  }")
-
-  echo "$RUN_ANALYSIS_RESPONSE" | jq .
-
-  echo "   Verifying run-analysis includes parameter export output (.txt resource)"
-  HAS_PARAM_PREFIX_TEXT=$(echo "$RUN_ANALYSIS_RESPONSE" | jq -r '
-    [(.result.content // [])[] | .text? // ""]
-    | any(test("sasview_parameter_values:"))
-  ')
-  HAS_PARAM_FILE=$(echo "$RUN_ANALYSIS_RESPONSE" | jq -r '
-    [(.result.content // [])[] | tostring]
-    | any(test("sasview_parameter_values\\.txt"))
-  ')
-  HAS_RESULTS_FILE=$(echo "$RUN_ANALYSIS_RESPONSE" | jq -r '
-    [(.result.content // [])[] | tostring]
-    | any(test("fit_results\\.csv"))
-  ')
-
-  if { [ "$HAS_PARAM_FILE" = "true" ] || [ "$HAS_PARAM_PREFIX_TEXT" = "true" ]; } && [ "$HAS_RESULTS_FILE" = "true" ]; then
-    echo "   ✅ Parameter export output is present in MCP response"
-    echo "   ✅ Fit results CSV is present in MCP response"
-  else
-    echo "   ❌ Required fit artifacts are missing from MCP response"
-    echo "   Debug content entries:"
-    echo "$RUN_ANALYSIS_RESPONSE" | jq '.result.content // []'
-    exit 1
-  fi
-else
-  echo "   SKIPPED - no CSV files found in uploads"
-fi
-echo
-
-# ============================================
-# Polydispersity Tools Tests
-# ============================================
-
-# Test get-polydispersity-options
-echo "9. get-polydispersity-options"
-mcp_call 10 "tools/call" '{"name":"get-polydispersity-options","arguments":{}}' | jq .
-echo
-
-# Test get-polydisperse-parameters for cylinder model
-echo "10. get-polydisperse-parameters (cylinder)"
-mcp_call 11 "tools/call" '{"name":"get-polydisperse-parameters","arguments":{"model_name":"cylinder"}}' | jq .
-echo
-
-# Test get-polydisperse-parameters for sphere model
-echo "11. get-polydisperse-parameters (sphere)"
-mcp_call 12 "tools/call" '{"name":"get-polydisperse-parameters","arguments":{"model_name":"sphere"}}' | jq .
-echo
-
-# Test run-analysis with polydispersity enabled
-echo "12. run-analysis with polydispersity (cylinder, 10% gaussian PD on radius)"
-if [ -n "$CSV_FILE" ]; then
-  echo "   Using file: $CSV_FILE"
-  mcp_call 13 "tools/call" "{
-    \"name\":\"run-analysis\",
-    \"arguments\":{
-      \"name\":\"fitting-with-custom-model\",
-      \"parameters\":{
-        \"input_file\":\"$CSV_FILE\",
-        \"model\":\"cylinder\",
-        \"engine\":\"bumps\",
-        \"method\":\"amoeba\",
-        \"param_overrides\":$CYLINDER_PARAMS,
-        \"polydispersity\":{
-          \"radius\":{
-            \"pd_width\":0.1,
-            \"pd_type\":\"gaussian\",
-            \"pd_n\":10,
-            \"vary\":false
-          }
-        }
-      }
-    }
-  }" | jq .
-else
-  echo "   SKIPPED - no CSV files found in uploads"
-fi
-echo
-
-# Test run-analysis with polydispersity on multiple parameters
-# echo "13. run-analysis with multi-param polydispersity (cylinder, PD on radius + length)"
-# if [ -n "$CSV_FILE" ]; then
-#   echo "   Using file: $CSV_FILE"
-#   mcp_call 14 "tools/call" "{
-#     \"name\":\"run-analysis\",
-#     \"arguments\":{
-#       \"name\":\"fitting-with-custom-model\",
-#       \"parameters\":{
-#         \"input_file\":\"$CSV_FILE\",
-#         \"model\":\"cylinder\",
-#         \"engine\":\"bumps\",
-#         \"method\":\"amoeba\",
-#         \"param_overrides\":$CYLINDER_PARAMS,
-#         \"polydispersity\":{
-#           \"radius\":{
-#             \"pd_width\":0.1,
-#             \"pd_type\":\"lognormal\",
-#             \"pd_n\":10,
-#             \"vary\":false
-#           },
-#           \"length\":{
-#             \"pd_width\":0.15,
-#             \"pd_type\":\"gaussian\",
-#             \"pd_n\":10,
-#             \"vary\":false
-#           }
-#         }
-#       }
-#     }
-#   }" | jq .
-# else
-#   echo "   SKIPPED - no CSV files found in uploads"
-# fi
-
-# ============================================
-# Structure Factor Tools Tests
-# ============================================
-
-# Test list-structure-factors
-echo "13. list-structure-factors"
-mcp_call 14 "tools/call" '{"name":"list-structure-factors","arguments":{}}' | jq .
-echo
-
-# Test get-structure-factor-parameters (sphere@hardsphere)
-echo "14. get-structure-factor-parameters (sphere@hardsphere)"
-mcp_call 15 "tools/call" '{"name":"get-structure-factor-parameters","arguments":{"form_factor":"sphere","structure_factor":"hardsphere"}}' | jq .
-echo
-
-# Test get-structure-factor-parameters (sphere@hayter_msa)
-echo "15. get-structure-factor-parameters (sphere@hayter_msa)"
-mcp_call 16 "tools/call" '{"name":"get-structure-factor-parameters","arguments":{"form_factor":"sphere","structure_factor":"hayter_msa"}}' | jq .
-echo
-
-# Get sphere model parameters for structure factor tests
-echo "16. Fetching sphere model parameters for structure factor tests"
-SPHERE_PARAMS_RESPONSE=$(mcp_call 17 "tools/call" '{"name":"get-model-parameters","arguments":{"model_name":"sphere"}}')
-SPHERE_PARAMS=$(echo "$SPHERE_PARAMS_RESPONSE" | jq -c '.result.content[0].text | fromjson // {}')
-SPHERE_PARAMS=$(echo "$SPHERE_PARAMS" | jq -c '
-  walk(if type == "object" then del(.description) else . end) |
-  .radius.vary = true |
-  .scale.vary = true |
-  .background.vary = true
-')
-echo "   Sphere parameters (filtered + vary=true): $SPHERE_PARAMS"
-echo
-
-# Test run-analysis with hardsphere structure factor
-echo "17. run-analysis with structure factor (sphere@hardsphere)"
-if [ -n "$CSV_FILE" ]; then
-  echo "   Using file: $CSV_FILE"
-  mcp_call 18 "tools/call" "{
-    \"name\":\"run-analysis\",
-    \"arguments\":{
-      \"name\":\"fitting-with-custom-model\",
-      \"parameters\":{
-        \"input_file\":\"$CSV_FILE\",
-        \"model\":\"sphere\",
-        \"engine\":\"bumps\",
-        \"method\":\"amoeba\",
-        \"param_overrides\":$SPHERE_PARAMS,
-        \"structure_factor\":\"hardsphere\",
-        \"structure_factor_params\":{
-          \"volfraction\":{\"value\":0.2,\"min\":0.0,\"max\":0.6,\"vary\":true},
-          \"radius_effective\":{\"value\":50,\"min\":10,\"max\":100,\"vary\":true}
-        }
-      }
-    }
-  }" | jq .
-else
-  echo "   SKIPPED - no CSV files found in uploads"
-fi
-echo
-
-# Test run-analysis with structure factor and link_radius mode
-echo "18. run-analysis with structure factor + link_radius mode (sphere@hardsphere)"
-if [ -n "$CSV_FILE" ]; then
-  echo "   Using file: $CSV_FILE"
-  mcp_call 19 "tools/call" "{
-    \"name\":\"run-analysis\",
-    \"arguments\":{
-      \"name\":\"fitting-with-custom-model\",
-      \"parameters\":{
-        \"input_file\":\"$CSV_FILE\",
-        \"model\":\"sphere\",
-        \"engine\":\"bumps\",
-        \"method\":\"amoeba\",
-        \"param_overrides\":$SPHERE_PARAMS,
-        \"structure_factor\":\"hardsphere\",
-        \"structure_factor_params\":{
-          \"volfraction\":{\"value\":0.2,\"min\":0.0,\"max\":0.6,\"vary\":true}
-        },
-        \"radius_effective_mode\":\"link_radius\"
-      }
-    }
-  }" | jq .
-else
-  echo "   SKIPPED - no CSV files found in uploads"
-fi
-echo
-
-# Test run-analysis with hayter_msa structure factor (charged spheres)
-echo "19. run-analysis with charged sphere structure factor (sphere@hayter_msa)"
-if [ -n "$CSV_FILE" ]; then
-  echo "   Using file: $CSV_FILE"
-  mcp_call 20 "tools/call" "{
-    \"name\":\"run-analysis\",
-    \"arguments\":{
-      \"name\":\"fitting-with-custom-model\",
-      \"parameters\":{
-        \"input_file\":\"$CSV_FILE\",
-        \"model\":\"sphere\",
-        \"engine\":\"bumps\",
-        \"method\":\"amoeba\",
-        \"param_overrides\":$SPHERE_PARAMS,
-        \"structure_factor\":\"hayter_msa\",
-        \"structure_factor_params\":{
-          \"volfraction\":{\"value\":0.2,\"min\":0.0,\"max\":0.6,\"vary\":true},
-          \"radius_effective\":{\"value\":50,\"min\":10,\"max\":100,\"vary\":true},
-          \"charge\":{\"value\":10,\"min\":0,\"max\":100,\"vary\":true}
-        }
-      }
-    }
-  }" | jq .
-else
-  echo "   SKIPPED - no CSV files found in uploads"
-fi
-echo
-
-echo "=== Done ==="
+echo "All typed MCP smoke tests passed."

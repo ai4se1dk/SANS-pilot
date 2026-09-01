@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
-from fastmcp.utilities.types import Image
 
-from sans_pilot import main
+from sans_pilot import data_tools, main
+from sans_pilot.datasets import PreparedData
+from sans_pilot.schemas import DatasetPipeline, UploadDataSource
 
 
 def _write_sans_csv(path: Path, *, intensity: float = 1.0) -> None:
@@ -20,11 +21,89 @@ def _write_sans_csv(path: Path, *, intensity: float = 1.0) -> None:
   path.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 
-def test_inspect_sans_data_tool_is_registered():
+def test_typed_sans_tools_are_registered_and_legacy_tools_are_removed():
   tools = asyncio.run(main.mcp.list_tools())
-  tool_names = {tool.name for tool in tools}
+  tool_by_name = {tool.name: tool for tool in tools}
+  tool_names = set(tool_by_name)
+  assert "describe-sans-capabilities" in tool_names
+  assert "list-supported-sans-formats" in tool_names
+  assert "list-uploaded-sans-files" in tool_names
   assert "inspect-sans-data" in tool_names
   assert "plot-sans-data" in tool_names
+  assert "process-sans-data" in tool_names
+  assert "list-sans-models" in tool_names
+  assert "get-sans-model-parameters" in tool_names
+  assert "list-structure-factors" in tool_names
+  assert "get-polydispersity-options" in tool_names
+  assert "fit-sans-model" in tool_names
+  assert "scan-sans-dmax" in tool_names
+  assert "invert-sans-pr" in tool_names
+  assert "list-sans-examples" in tool_names
+  assert "inspect-sans-example" in tool_names
+  assert "simulate-sans-data" in tool_names
+  assert "simulate-sans-pair" in tool_names
+  assert "describe-possibilities" not in tool_names
+  assert "list-uploaded-files" not in tool_names
+  assert "get-model-parameters" not in tool_names
+  assert "get-structure-factor-parameters" not in tool_names
+  assert "get-polydisperse-parameters" not in tool_names
+  assert "list-analyses" not in tool_names
+  assert "run-analysis" not in tool_names
+  upload_description = tool_by_name["list-uploaded-sans-files"].description or ""
+  assert "Always call this first" in upload_description
+  assert "latest/recent" in upload_description
+
+
+def test_uploaded_file_listing_is_user_scoped_and_newest_first(tmp_path, monkeypatch):
+  uploads = tmp_path / "uploads"
+  user_dir = uploads / "user-1"
+  other_dir = uploads / "user-2"
+  user_dir.mkdir(parents=True)
+  other_dir.mkdir(parents=True)
+  older = user_dir / "old-id__older.csv"
+  newer = user_dir / "new-id__simulated_latest.csv"
+  hidden_other_user = other_dir / "other-id__private.csv"
+  _write_sans_csv(older)
+  _write_sans_csv(newer)
+  _write_sans_csv(hidden_other_user)
+  os.utime(older, (1_000, 1_000))
+  os.utime(newer, (2_000, 2_000))
+
+  monkeypatch.setenv("UPLOAD_DIR", str(uploads))
+  monkeypatch.setattr(data_tools, "get_user_id_from_request", lambda: "user-1")
+
+  result = data_tools.list_uploaded_sans_files()
+
+  assert [item["original_name"] for item in result] == [
+    "simulated_latest.csv",
+    "older.csv",
+  ]
+  assert all("private.csv" not in item["original_name"] for item in result)
+  assert all(item["content_validated"] is False for item in result)
+  assert all(item["validation_scope"] == "extension_only" for item in result)
+
+
+def test_typed_pipeline_is_validated_through_mcp_transport():
+  result = asyncio.run(
+    main.mcp.call_tool(
+      "inspect-sans-data",
+      {
+        "pipeline": {
+          "primary": {
+            "kind": "simulation",
+            "model": "sphere",
+            "parameters": {"radius": 50},
+            "points": 10,
+            "seed": 42,
+          }
+        }
+      },
+    )
+  )
+
+  assert result.structured_content is not None
+  assert result.structured_content["analysis"] == "data_inspection"
+  assert result.structured_content["source"]["truth"]["radius"] == 50
 
 
 def test_inspect_sans_data_returns_bounded_metadata(tmp_path, monkeypatch):
@@ -35,14 +114,18 @@ def test_inspect_sans_data_returns_bounded_metadata(tmp_path, monkeypatch):
   _write_sans_csv(input_file)
 
   monkeypatch.setenv("UPLOAD_DIR", str(uploads))
-  monkeypatch.setattr(main, "get_user_id_from_request", lambda: "user-1")
+  monkeypatch.setattr(data_tools, "get_user_id_from_request", lambda: "user-1")
 
-  result = cast(Any, main.inspect_sans_data)("sample.csv")
+  result = data_tools.inspect_sans_data(
+    DatasetPipeline(
+      primary=UploadDataSource(kind="upload", file="sample.csv"),
+    )
+  )
 
-  assert result["file_name"] == "sample.csv"
-  assert result["points_total"] == 10
-  assert result["has_intensity_errors"] is True
-  assert result["has_q_resolution"] is False
+  assert result["source"]["file_name"] == "sample.csv"
+  assert result["data"]["points_total"] == 10
+  assert result["data"]["has_intensity_errors"] is True
+  assert result["data"]["has_q_resolution"] is False
 
 
 def test_render_data_only_plot_never_configures_or_fits_model(tmp_path, monkeypatch):
@@ -84,13 +167,25 @@ def test_render_data_only_plot_never_configures_or_fits_model(tmp_path, monkeypa
       calls["plot"] = kwargs
       return Figure()
 
-  monkeypatch.setattr(main.data_ops, "load", lambda _path: data)
-  monkeypatch.setattr(main, "SANSFitter", Fitter)
+  monkeypatch.setattr(
+    data_tools,
+    "prepare_dataset",
+    lambda _pipeline, user_id: PreparedData(
+      data=data,
+      preprocessing=[],
+      warnings=[],
+      source={"kind": "upload", "file_name": "sample.csv"},
+    ),
+  )
+  monkeypatch.setattr(data_tools, "SANSFitter", Fitter)
   output_path = tmp_path / "sans_data_plot.png"
 
-  result = main._render_data_only_plot(
-    input_path=tmp_path / "sample.csv",
-    output_path=output_path,
+  result = data_tools._render_data_only_plot(
+    DatasetPipeline(
+      primary=UploadDataSource(kind="upload", file="sample.csv"),
+    ),
+    user_id="user-1",
+    output_path=str(output_path),
     log_scale=False,
   )
 
@@ -102,137 +197,91 @@ def test_render_data_only_plot_never_configures_or_fits_model(tmp_path, monkeypa
   }
   assert calls["layout"] == {"height": 500, "width": 900}
   assert output_path.read_bytes() == b"png"
-  assert result["plot"] == {
-    "type": "data_only",
+  assert result["configuration"] == {
     "log_scale": False,
     "fit_performed": False,
+    "fit_curve_included": False,
+    "residuals_included": False,
   }
-  assert result["has_intensity_errors"] is True
-  assert result["has_q_resolution"] is True
+  assert result["data"]["has_intensity_errors"] is True
+  assert result["data"]["has_q_resolution"] is True
 
 
 def test_plot_sans_data_returns_summary_and_image(tmp_path, monkeypatch):
-  uploads = tmp_path / "uploads"
-  user_dir = uploads / "user-1"
-  user_dir.mkdir(parents=True)
-  _write_sans_csv(user_dir / "sample.csv")
   captured: dict[str, Any] = {}
 
-  def fake_render(*, input_path, output_path, log_scale):
-    captured["input_path"] = input_path
+  def fake_render(pipeline, *, user_id, output_path, log_scale):
+    captured["pipeline"] = pipeline
+    captured["user_id"] = user_id
     captured["output_path"] = output_path
     captured["log_scale"] = log_scale
-    output_path.write_bytes(b"png")
+    Path(output_path).write_bytes(b"png")
     return {
-      "file_name": input_path.name,
-      "plot": {
-        "type": "data_only",
+      "source": {"kind": "upload", "file_name": "sample.csv"},
+      "configuration": {
         "log_scale": log_scale,
         "fit_performed": False,
       },
+      "artifacts": [{"name": "sans_data_plot.png", "mime_type": "image/png"}],
     }
 
-  monkeypatch.setenv("UPLOAD_DIR", str(uploads))
-  monkeypatch.setenv("SANS_PILOT_RUNS_DIR", str(tmp_path / "runs"))
-  monkeypatch.setattr(main, "get_user_id_from_request", lambda: "user-1")
-  monkeypatch.setattr(main, "_render_data_only_plot", fake_render)
-
-  response = asyncio.run(cast(Any, main.plot_sans_data)("sample.csv", log_scale=False))
-
-  summary = json.loads(response[0])
-  assert summary["plot"]["fit_performed"] is False
-  assert captured["input_path"].is_file()
-  assert captured["input_path"].parent.name != user_dir.name
-  assert captured["log_scale"] is False
-  assert isinstance(response[1], Image)
-  assert response[1].path == captured["output_path"]
-
-
-def test_run_analysis_copies_primary_and_auxiliary_inputs(tmp_path, monkeypatch):
-  uploads = tmp_path / "uploads"
-  user_dir = uploads / "user-1"
-  user_dir.mkdir(parents=True)
-  _write_sans_csv(user_dir / "sample.csv")
-  _write_sans_csv(user_dir / "background.csv", intensity=0.1)
-
-  captured = {}
-
-  def fake_execute(name, parameters):
-    captured["name"] = name
-    captured["parameters"] = parameters
-    return {"fit": {"chisq": 1.25}, "artifacts": {}}
-
-  monkeypatch.setenv("UPLOAD_DIR", str(uploads))
-  monkeypatch.setenv("SANS_PILOT_RUNS_DIR", str(tmp_path / "runs"))
-  monkeypatch.setattr(main, "get_user_id_from_request", lambda: "user-1")
-  monkeypatch.setattr(main, "execute_analysis", fake_execute)
-
-  response = asyncio.run(
-    cast(Any, main.run_analysis)(
-      "fitting-with-custom-model",
-      {
-        "input_file": "sample.csv",
-        "auxiliary_files": {"background": "background.csv"},
-        "model": "sphere",
-        "param_overrides": {},
-      },
-    )
+  monkeypatch.setattr(data_tools, "get_user_id_from_request", lambda: "user-1")
+  monkeypatch.setattr(data_tools, "_render_data_only_plot", fake_render)
+  monkeypatch.setattr(
+    data_tools,
+    "create_run_directory",
+    lambda _operation: tmp_path,
   )
 
-  parameters = captured["parameters"]
-  copied_input = Path(parameters["input_file"])
-  copied_background = Path(parameters["auxiliary_files"]["background"])
-  assert copied_input.is_file()
-  assert copied_background.is_file()
-  assert copied_input.parent == copied_background.parent
-  assert copied_background.name.startswith("aux_01_background__")
-  assert json.loads(response[0]) == {"chisq": 1.25}
+  pipeline = DatasetPipeline(
+    primary=UploadDataSource(kind="upload", file="sample.csv"),
+  )
+
+  response = asyncio.run(data_tools.plot_sans_data(pipeline, log_scale=False))
+
+  assert response["configuration"]["fit_performed"] is False
+  assert captured["pipeline"] == pipeline
+  assert captured["user_id"] == "user-1"
+  assert captured["log_scale"] is False
+  assert response["artifacts"][0]["name"] == Path(captured["output_path"]).name
+  assert response["artifacts"][0]["uri"].startswith("sans-pilot://artifact/")
 
 
-def test_concurrent_runs_use_isolated_input_copies(tmp_path, monkeypatch):
-  uploads = tmp_path / "uploads"
-  user_dir = uploads / "user-1"
-  user_dir.mkdir(parents=True)
-  _write_sans_csv(user_dir / "sample.csv")
-  captured_parameters = []
-
-  def fake_execute(_name, parameters):
-    captured_parameters.append(parameters)
-    return {"fit": {"chisq": 1.0}, "artifacts": {}}
-
-  monkeypatch.setenv("UPLOAD_DIR", str(uploads))
-  monkeypatch.setenv("SANS_PILOT_RUNS_DIR", str(tmp_path / "runs"))
-  monkeypatch.setattr(main, "get_user_id_from_request", lambda: "user-1")
-  monkeypatch.setattr(main, "execute_analysis", fake_execute)
-
-  async def run_two():
-    request = {
-      "input_file": "sample.csv",
-      "model": "sphere",
-      "param_overrides": {},
+def test_process_sans_data_returns_csv_only_when_explicitly_requested(
+  tmp_path,
+  monkeypatch,
+):
+  def fake_process(
+    _pipeline,
+    *,
+    user_id,
+    output_path,
+    include_processed_csv,
+  ):
+    assert user_id == "user-1"
+    if include_processed_csv:
+      Path(output_path).write_text("Q,I\n", encoding="utf-8")
+    return {
+      "analysis": "data_processing",
+      "configuration": {"processed_csv_included": include_processed_csv},
+      "artifacts": (
+        [{"name": "processed_sans_data.csv", "mime_type": "text/csv"}]
+        if include_processed_csv
+        else []
+      ),
     }
-    await asyncio.gather(
-      cast(Any, main.run_analysis)("fitting-with-custom-model", request),
-      cast(Any, main.run_analysis)("fitting-with-custom-model", request),
-    )
 
-  asyncio.run(run_two())
+  monkeypatch.setattr(data_tools, "get_user_id_from_request", lambda: "user-1")
+  monkeypatch.setattr(data_tools, "_process_sans_data", fake_process)
+  monkeypatch.setattr(data_tools, "create_run_directory", lambda _name: tmp_path)
+  pipeline = DatasetPipeline(
+    primary=UploadDataSource(kind="upload", file="sample.csv"),
+  )
 
-  copied_paths = [Path(parameters["input_file"]) for parameters in captured_parameters]
-  assert len(copied_paths) == 2
-  assert copied_paths[0] != copied_paths[1]
-  assert all(path.is_file() for path in copied_paths)
+  compact = asyncio.run(data_tools.process_sans_data(pipeline))
+  with_file = asyncio.run(
+    data_tools.process_sans_data(pipeline, include_processed_csv=True)
+  )
 
-
-def test_run_analysis_requires_new_input_file_contract():
-  try:
-    asyncio.run(
-      cast(Any, main.run_analysis)(
-        "fitting-with-custom-model",
-        {"input_csv": "legacy.csv"},
-      )
-    )
-  except ValueError as error:
-    assert "parameters.input_file" in str(error)
-  else:
-    raise AssertionError("Legacy input_csv unexpectedly remained supported")
+  assert compact["configuration"] == {"processed_csv_included": False}
+  assert with_file["artifacts"][0]["uri"].startswith("sans-pilot://artifact/")
