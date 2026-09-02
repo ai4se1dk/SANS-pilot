@@ -5,28 +5,25 @@ analysis, powered by [SANS-fitter](https://github.com/ai4se1dk/SANS-fitter).
 
 ## Scientific tools
 
-| Tool | Purpose |
-| --- | --- |
-| `describe-sans-capabilities` | Describe supported workflows and scientific limitations |
-| `list-supported-sans-formats` | List accepted reduced 1D community formats |
-| `list-uploaded-sans-files` | List current-user uploads without exposing file contents |
-| `inspect-sans-data` | Inspect an upload, example, or simulation |
-| `plot-sans-data` | Plot measured data without a model, fit curve, or residuals |
-| `process-sans-data` | Apply arithmetic/Q selection and return processed CSV data |
-| `list-sans-models` | List exact sasmodels names |
-| `get-sans-model-parameters` | Discover an exact atomic, interacting, or composite model contract |
-| `list-structure-factors` | List supported inter-particle interaction models |
-| `get-polydispersity-options` | List size-distribution types and defaults |
-| `fit-sans-model` | Run optimization or Bayesian fitting through sans-fitter |
-| `scan-sans-dmax` | Explore Dmax using Rg, I(0), fit-quality, and positivity trends |
-| `invert-sans-pr` | Recover the model-free real-space pair distribution P(r) |
-| `list-sans-examples` | Discover curated measured and simulated datasets |
-| `inspect-sans-example` | Inspect an example and its suggested configuration |
-| `simulate-sans-data` | Generate synthetic data with known truth |
-| `simulate-sans-pair` | Generate a matched sample/background pair |
-
-Unknown or obsolete request fields are rejected. The former generic
-`list-analyses` and `run-analysis` interface is not supported.
+| Tool                          | Purpose                                                            |
+| ----------------------------- | ------------------------------------------------------------------ |
+| `describe-sans-capabilities`  | Describe supported workflows and scientific limitations            |
+| `list-supported-sans-formats` | List accepted reduced 1D community formats                         |
+| `list-uploaded-sans-files`    | List current-user uploads without exposing file contents           |
+| `inspect-sans-data`           | Inspect an upload, example, or simulation                          |
+| `plot-sans-data`              | Plot measured data without a model, fit curve, or residuals        |
+| `process-sans-data`           | Apply arithmetic/Q selection and return processed CSV data         |
+| `list-sans-models`            | List exact sasmodels names                                         |
+| `get-sans-model-parameters`   | Discover an exact atomic, interacting, or composite model contract |
+| `list-structure-factors`      | List supported inter-particle interaction models                   |
+| `get-polydispersity-options`  | List size-distribution types and defaults                          |
+| `fit-sans-model`              | Run optimization or Bayesian fitting through sans-fitter           |
+| `scan-sans-dmax`              | Explore Dmax using Rg, I(0), fit-quality, and positivity trends    |
+| `invert-sans-pr`              | Recover the model-free real-space pair distribution P(r)           |
+| `list-sans-examples`          | Discover curated measured and simulated datasets                   |
+| `inspect-sans-example`        | Inspect an example and its suggested configuration                 |
+| `simulate-sans-data`          | Generate synthetic data with known truth                           |
+| `simulate-sans-pair`          | Generate a matched sample/background pair                          |
 
 ## Data pipeline
 
@@ -34,11 +31,11 @@ All data tools use a typed `pipeline`. The primary source may be a user upload,
 a bundled example, or a simulation:
 
 ```json
-{"primary": {"kind": "upload", "file": "stored-data-name.xml"}}
+{ "primary": { "kind": "upload", "file": "stored-data-name.xml" } }
 ```
 
 ```json
-{"primary": {"kind": "example", "name": "protein"}}
+{ "primary": { "kind": "example", "name": "protein" } }
 ```
 
 ```json
@@ -46,7 +43,7 @@ a bundled example, or a simulation:
   "primary": {
     "kind": "simulation",
     "model": "sphere",
-    "parameters": {"radius": 50},
+    "parameters": { "radius": 50 },
     "seed": 42
   }
 }
@@ -63,7 +60,7 @@ by `sans-fitter`.
 ```json
 {
   "pipeline": {
-    "primary": {"kind": "upload", "file": "simulated_sans_data.csv"}
+    "primary": { "kind": "upload", "file": "simulated_sans_data.csv" }
   },
   "log_scale": true
 }
@@ -87,18 +84,18 @@ component aliases, and links reported by the configured sans-fitter model.
 {
   "request": {
     "pipeline": {
-      "primary": {"kind": "upload", "file": "simulated_sans_data.csv"},
+      "primary": { "kind": "upload", "file": "simulated_sans_data.csv" },
       "q_min": 0.01,
       "q_max": 0.3
     },
-    "model": {"kind": "atomic", "model": "cylinder"},
+    "model": { "kind": "atomic", "model": "cylinder" },
     "parameters": {
-      "radius": {"value": 20, "min": 1, "max": 200, "vary": true},
-      "length": {"value": 400, "min": 10, "max": 4000, "vary": true},
-      "scale": {"value": 1, "min": 0, "max": 10, "vary": true},
-      "background": {"value": 0.001, "min": 0, "max": 1, "vary": true}
+      "radius": { "value": 20, "min": 1, "max": 200, "vary": true },
+      "length": { "value": 400, "min": 10, "max": 4000, "vary": true },
+      "scale": { "value": 1, "min": 0, "max": 10, "vary": true },
+      "background": { "value": 0.001, "min": 0, "max": 1, "vary": true }
     },
-    "fit": {"mode": "optimization", "engine": "bumps", "method": "amoeba"}
+    "fit": { "mode": "optimization", "engine": "bumps", "method": "amoeba" }
   }
 }
 ```
@@ -146,8 +143,8 @@ Composite models combine uniquely named components. `shared_parameters` and
   "kind": "composite",
   "operation": "+",
   "components": [
-    {"alias": "small", "model": "sphere"},
-    {"alias": "long", "model": "cylinder"}
+    { "alias": "small", "model": "sphere" },
+    { "alias": "long", "model": "cylinder" }
   ],
   "shared_parameters": ["sld", "sld_solvent"],
   "parameter_links": {}
@@ -200,9 +197,9 @@ or a manual mode that requires both `n_terms` and `alpha`:
 ```json
 {
   "request": {
-    "pipeline": {"primary": {"kind": "example", "name": "protein"}},
+    "pipeline": { "primary": { "kind": "example", "name": "protein" } },
     "d_max": 120,
-    "selection": {"mode": "automatic"},
+    "selection": { "mode": "automatic" },
     "fit_background": false,
     "regularizer": "corrected",
     "include_pr_csv": false,
@@ -241,12 +238,12 @@ loading. 2D SANS and SESANS are rejected with actionable messages.
 
 ## Configuration
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `UPLOAD_DIR` | `/uploads` | User-uploaded data directory |
-| `SANS_PILOT_RUNS_DIR` | `/tmp/sans-pilot-runs` | Internal workspace root for generated artifacts |
-| `SANS_PILOT_ARTIFACT_TTL_SECONDS` | `86400` | Lifetime, in seconds, of artifact tokens in the in-memory registry |
-| `API_TOKEN` | unset | Optional bearer token |
+| Variable                          | Default                | Description                                                        |
+| --------------------------------- | ---------------------- | ------------------------------------------------------------------ |
+| `UPLOAD_DIR`                      | `/uploads`             | User-uploaded data directory                                       |
+| `SANS_PILOT_RUNS_DIR`             | `/tmp/sans-pilot-runs` | Internal workspace root for generated artifacts                    |
+| `SANS_PILOT_ARTIFACT_TTL_SECONDS` | `86400`                | Lifetime, in seconds, of artifact tokens in the in-memory registry |
+| `API_TOKEN`                       | unset                  | Optional bearer token                                              |
 
 ## Local development
 
