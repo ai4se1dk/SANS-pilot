@@ -138,8 +138,8 @@ Supported structure factors are `hardsphere`, `hayter_msa`, `squarewell`, and
 
 ### Composite model
 
-Composite models combine uniquely named components. Shared parameters and
-equality links must have a scientific justification.
+Composite models combine uniquely named components. `shared_parameters` and
+`parameter_links` configure the equality mechanisms provided by sans-fitter.
 
 ```json
 {
@@ -189,10 +189,10 @@ contents do not consume model context.
 
 ## Model-free P(r) inversion
 
-Use `scan-sans-dmax` before inversion when Dmax is not already justified. The
-scan returns bounded arrays for Rg, I(0), data chi-squared, oscillations,
-positivity, background, and alpha plus `dmax_scan.png`. Choose a stable and
-physically acceptable region rather than the lowest chi-squared alone.
+`scan-sans-dmax` exposes sans-fitter's Dmax exploration. The scan returns
+arrays for Rg, I(0), data chi-squared, oscillations, positivity, background,
+and alpha plus `dmax_scan.png`. Sans-fitter documents a good Dmax as showing an
+Rg/I(0) plateau and a minimum in the data chi-squared.
 
 `invert-sans-pr` supports automatic selection of basis terms and regularization
 or a manual mode that requires both `n_terms` and `alpha`:

@@ -29,7 +29,7 @@ SANS (Small-Angle Neutron Scattering) data analysis server.
 6. `list-sans-models` - Show exact available model names
 7. `get-sans-model-parameters` - Discover parameters for the exact atomic, interacting, or composite model
 8. `list-structure-factors` / `get-polydispersity-options` - Discover interaction and size-distribution controls
-9. `fit-sans-model` - Run an explicitly weighted optimization or Bayesian fit
+9. `fit-sans-model` - Run optimization or Bayesian fitting through sans-fitter
 10. `scan-sans-dmax` / `invert-sans-pr` - Explore Dmax and recover model-free P(r)
 11. `list-sans-examples` / `inspect-sans-example` - Discover curated teaching and validation datasets
 12. `simulate-sans-data` / `simulate-sans-pair` - Generate synthetic data with known truth
@@ -42,24 +42,18 @@ SANS (Small-Angle Neutron Scattering) data analysis server.
 - Never put uploaded file contents into the tool request; pass only the stored filename from `list-uploaded-sans-files`
 - Never guess a model or parameter name; use the exact output of `list-sans-models` and `get-sans-model-parameters`
 
-## Low-Friction First Run
-- If the user asks for a fit or analysis without specifying a model, do not block for model selection
-- Use the latest uploaded SANS data file, inspect it, select an exact model, discover its parameters, and run an initial baseline fit
-- An explicit plot-only or no-fit request always overrides the baseline-fit workflow
-- Ask follow-up questions only when there is no usable file or tool execution fails
-
 ## Key Tools
 - `list-structure-factors` - For concentrated samples with particle interactions
 - `get-sans-model-parameters` - Also reports which exact parameters support polydispersity
 - `pipeline.operations` in `fit-sans-model` - For background subtraction, scaling, and transmission correction
-- Composite models support two to five named components, shared parameters, and equality links with BUMPS point-estimate fitting
+- Composite models and parameter links require BUMPS point-estimate fitting
 
-## Fitting Tips
-- Set `vary: true` for parameters to optimize (radius, length, scale, background)
-- Use `q_min` and `q_max` to exclude unreliable low- or high-Q regions
-- dQ resolution is read automatically when present in the input data
-- Use `fit.mode="bayesian"` only when posterior uncertainty analysis is requested; it requires measured dI and an atomic model without parameter links
-- For P(r), scan Dmax before inversion when it is not already justified; buffer-subtracted protein data normally uses `fit_background=false`
+## Fitting API Facts
+- A parameter is optimized when its `vary` setting is true
+- `q_min` and `q_max` restrict the fitted Q range; sans-fitter documents beam-stop spillover and background-dominated points as example uses
+- dQ resolution is read when present in the input data
+- Bayesian fitting uses BUMPS DREAM and does not support composite models or parameter links
+- For P(r), sans-fitter provides Dmax scanning; buffer-subtracted data can use `fit_background=false`
   """,
 )
 
