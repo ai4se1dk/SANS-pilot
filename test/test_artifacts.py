@@ -58,4 +58,4 @@ def test_artifact_can_be_read_through_mcp_resources(tmp_path):
 
   assert len(result) == 1
   assert base64.b64decode(result[0].blob) == payload  # type: ignore[union-attr]
-  assert result[0].mimeType == "image/png"
+  assert result[0].model_dump(by_alias=True)["mimeType"] == "image/png"

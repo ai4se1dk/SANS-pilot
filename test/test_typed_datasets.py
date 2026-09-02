@@ -177,11 +177,7 @@ def test_inspection_ranges_use_only_active_points():
 def test_repository_resolution_csv_aliases_load_with_di_and_dq(tmp_path, monkeypatch):
   uploads = tmp_path / "uploads"
   uploads.mkdir()
-  source = (
-    Path(__file__).parents[2]
-    / "SANS-fitter"
-    / "simulated_sans_data_with_resolution.csv"
-  )
+  source = Path(__file__).parent / "simulated_sans_data_with_resolution.csv"
   destination = uploads / "resolution.csv"
   shutil.copyfile(source, destination)
   monkeypatch.setenv("UPLOAD_DIR", str(uploads))
