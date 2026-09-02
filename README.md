@@ -243,7 +243,14 @@ loading. 2D SANS and SESANS are rejected with actionable messages.
 | `UPLOAD_DIR`                      | `/uploads`             | User-uploaded data directory                                       |
 | `SANS_PILOT_RUNS_DIR`             | `/tmp/sans-pilot-runs` | Internal workspace root for generated artifacts                    |
 | `SANS_PILOT_ARTIFACT_TTL_SECONDS` | `86400`                | Lifetime, in seconds, of artifact tokens in the in-memory registry |
+| `SANS_PILOT_MAX_WORKERS`          | `2`                    | Maximum concurrent scientific worker processes                     |
+| `SANS_PILOT_TOOL_TIMEOUT_SECONDS` | `1800`                 | Hard execution timeout per worker; `0` disables it                  |
 | `API_TOKEN`                       | unset                  | Optional bearer token                                              |
+
+Long-running scientific calls execute in isolated worker processes. Cancelling
+the MCP request terminates the worker and removes its partial artifact
+workspace. The hard tool timeout provides cleanup when a client does not
+propagate cancellation.
 
 ## Local development
 

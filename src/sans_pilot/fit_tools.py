@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
+from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
@@ -11,16 +11,27 @@ from sans_pilot.artifacts import artifact_result, create_run_directory
 from sans_pilot.files import get_user_id_from_request
 from sans_pilot.fitting import run_typed_fit
 from sans_pilot.schemas import FitSansModelRequest
+from sans_pilot.workers import run_cancellable_worker
+
+
+def _fit_worker(
+  request: FitSansModelRequest,
+  user_id: str | None,
+  output_dir: Path,
+) -> dict[str, Any]:
+  return run_typed_fit(request, user_id=user_id, output_dir=output_dir)
 
 
 async def fit_sans_model(request: FitSansModelRequest) -> Any:
   """Fit a typed atomic, interacting, or composite sasmodels model."""
   output_dir = create_run_directory("fit-sans-model")
   user_id = get_user_id_from_request()
-  result = await asyncio.to_thread(
-    run_typed_fit,
+  result = await run_cancellable_worker(
+    _fit_worker,
     request,
-    user_id=user_id,
+    user_id,
+    output_dir,
+    operation_name="fit-sans-model",
     output_dir=output_dir,
   )
   return artifact_result(result["summary"], result["artifacts"], user_id=user_id)

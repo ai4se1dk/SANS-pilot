@@ -78,11 +78,15 @@ def test_simulation_tool_attaches_csv_only_when_service_returns_it(
   plot = tmp_path / "simulated_sans_data.png"
   plot.write_bytes(b"png")
 
+  async def run_inline(worker, *args, **_kwargs):
+    return worker(*args)
+
   monkeypatch.setattr(
     example_tools,
     "create_run_directory",
     lambda _name: tmp_path,
   )
+  monkeypatch.setattr(example_tools, "run_cancellable_worker", run_inline)
   monkeypatch.setattr(
     example_tools,
     "_render_single_simulation",

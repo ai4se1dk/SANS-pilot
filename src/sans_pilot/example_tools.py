@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import io
 import warnings
@@ -33,6 +32,7 @@ from sans_pilot.schemas import (
   SimulateSansDataRequest,
   SimulateSansPairRequest,
 )
+from sans_pilot.workers import run_cancellable_worker
 
 SCHEMA_VERSION = "1.0"
 
@@ -236,15 +236,31 @@ def _artifact_metadata(artifacts: dict[str, Path]) -> list[dict[str, str]]:
   ]
 
 
+def _single_simulation_worker(
+  request: SimulateSansDataRequest,
+  output_dir: Path,
+) -> dict[str, Any]:
+  return _render_single_simulation(request, output_dir=output_dir)
+
+
+def _simulation_pair_worker(
+  request: SimulateSansPairRequest,
+  output_dir: Path,
+) -> dict[str, Any]:
+  return _render_simulation_pair(request, output_dir=output_dir)
+
+
 async def simulate_sans_data(
   request: SimulateSansDataRequest,
 ) -> Any:
   """Generate one SANS dataset with known ground truth."""
   output_dir = create_run_directory("simulate-sans-data")
   user_id = get_user_id_from_request()
-  result = await asyncio.to_thread(
-    _render_single_simulation,
+  result = await run_cancellable_worker(
+    _single_simulation_worker,
     request,
+    output_dir,
+    operation_name="simulate-sans-data",
     output_dir=output_dir,
   )
   return artifact_result(result["summary"], result["artifacts"], user_id=user_id)
@@ -256,9 +272,11 @@ async def simulate_sans_pair(
   """Generate reproducible matched sample/background datasets."""
   output_dir = create_run_directory("simulate-sans-pair")
   user_id = get_user_id_from_request()
-  result = await asyncio.to_thread(
-    _render_simulation_pair,
+  result = await run_cancellable_worker(
+    _simulation_pair_worker,
     request,
+    output_dir,
+    operation_name="simulate-sans-pair",
     output_dir=output_dir,
   )
   return artifact_result(result["summary"], result["artifacts"], user_id=user_id)

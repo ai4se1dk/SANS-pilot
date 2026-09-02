@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import io
 from typing import Annotated, Any, cast
@@ -27,6 +26,7 @@ from sans_pilot.files import (
 )
 from sans_pilot.runtime import render_runtime
 from sans_pilot.schemas import DatasetPipeline
+from sans_pilot.workers import run_cancellable_worker
 
 SCHEMA_VERSION = "1.0"
 
@@ -159,6 +159,20 @@ def _render_data_only_plot(
   )
 
 
+def _plot_worker(
+  pipeline: DatasetPipeline,
+  user_id: str | None,
+  output_path: str,
+  log_scale: bool,
+) -> dict[str, Any]:
+  return _render_data_only_plot(
+    pipeline,
+    user_id=user_id,
+    output_path=output_path,
+    log_scale=log_scale,
+  )
+
+
 async def plot_sans_data(
   pipeline: DatasetPipeline,
   log_scale: bool = True,
@@ -167,12 +181,14 @@ async def plot_sans_data(
   output_dir = create_run_directory("plot-sans-data")
   plot_path = output_dir / "sans_data_plot.png"
   user_id = get_user_id_from_request()
-  result = await asyncio.to_thread(
-    _render_data_only_plot,
+  result = await run_cancellable_worker(
+    _plot_worker,
     pipeline,
-    user_id=user_id,
-    output_path=str(plot_path),
-    log_scale=log_scale,
+    user_id,
+    str(plot_path),
+    log_scale,
+    operation_name="plot-sans-data",
+    output_dir=output_dir,
   )
   return artifact_result(result, {plot_path.name: plot_path}, user_id=user_id)
 
@@ -206,6 +222,20 @@ def _process_sans_data(
   )
 
 
+def _process_worker(
+  pipeline: DatasetPipeline,
+  user_id: str | None,
+  output_path: str,
+  include_processed_csv: bool,
+) -> dict[str, Any]:
+  return _process_sans_data(
+    pipeline,
+    user_id=user_id,
+    output_path=output_path,
+    include_processed_csv=include_processed_csv,
+  )
+
+
 async def process_sans_data(
   pipeline: DatasetPipeline,
   include_processed_csv: bool = False,
@@ -214,12 +244,14 @@ async def process_sans_data(
   output_dir = create_run_directory("process-sans-data")
   output_path = output_dir / "processed_sans_data.csv"
   user_id = get_user_id_from_request()
-  result = await asyncio.to_thread(
-    _process_sans_data,
+  result = await run_cancellable_worker(
+    _process_worker,
     pipeline,
-    user_id=user_id,
-    output_path=str(output_path),
-    include_processed_csv=include_processed_csv,
+    user_id,
+    str(output_path),
+    include_processed_csv,
+    operation_name="process-sans-data",
+    output_dir=output_dir,
   )
   artifacts = {output_path.name: output_path} if include_processed_csv else {}
   return cast(dict[str, Any], artifact_result(result, artifacts, user_id=user_id))

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
+from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
@@ -11,16 +11,36 @@ from sans_pilot.artifacts import artifact_result, create_run_directory
 from sans_pilot.files import get_user_id_from_request
 from sans_pilot.inversion import invert_sans_pr_service, scan_sans_dmax_service
 from sans_pilot.schemas import InvertSansPrRequest, ScanSansDmaxRequest
+from sans_pilot.workers import run_cancellable_worker
+
+
+def _scan_worker(
+  request: ScanSansDmaxRequest,
+  user_id: str | None,
+  output_dir: Path,
+) -> dict[str, Any]:
+  return scan_sans_dmax_service(request, user_id=user_id, output_dir=output_dir)
+
+
+def _inversion_worker(
+  request: InvertSansPrRequest,
+  user_id: str | None,
+  output_dir: Path,
+) -> dict[str, Any]:
+  return invert_sans_pr_service(request, user_id=user_id, output_dir=output_dir)
 
 
 async def scan_sans_dmax(request: ScanSansDmaxRequest) -> Any:
   """Scan Dmax to identify stable Rg/I(0), fit-quality, and positivity regions."""
   user_id = get_user_id_from_request()
-  result = await asyncio.to_thread(
-    scan_sans_dmax_service,
+  output_dir = create_run_directory("scan-sans-dmax")
+  result = await run_cancellable_worker(
+    _scan_worker,
     request,
-    user_id=user_id,
-    output_dir=create_run_directory("scan-sans-dmax"),
+    user_id,
+    output_dir,
+    operation_name="scan-sans-dmax",
+    output_dir=output_dir,
   )
   return artifact_result(result["summary"], result["artifacts"], user_id=user_id)
 
@@ -28,11 +48,14 @@ async def scan_sans_dmax(request: ScanSansDmaxRequest) -> Any:
 async def invert_sans_pr(request: InvertSansPrRequest) -> Any:
   """Recover the model-free real-space pair distance distribution P(r)."""
   user_id = get_user_id_from_request()
-  result = await asyncio.to_thread(
-    invert_sans_pr_service,
+  output_dir = create_run_directory("invert-sans-pr")
+  result = await run_cancellable_worker(
+    _inversion_worker,
     request,
-    user_id=user_id,
-    output_dir=create_run_directory("invert-sans-pr"),
+    user_id,
+    output_dir,
+    operation_name="invert-sans-pr",
+    output_dir=output_dir,
   )
   return artifact_result(result["summary"], result["artifacts"], user_id=user_id)
 

@@ -225,8 +225,12 @@ def test_plot_sans_data_returns_summary_and_image(tmp_path, monkeypatch):
       "artifacts": [{"name": "sans_data_plot.png", "mime_type": "image/png"}],
     }
 
+  async def run_inline(worker, *args, **_kwargs):
+    return worker(*args)
+
   monkeypatch.setattr(data_tools, "get_user_id_from_request", lambda: "user-1")
   monkeypatch.setattr(data_tools, "_render_data_only_plot", fake_render)
+  monkeypatch.setattr(data_tools, "run_cancellable_worker", run_inline)
   monkeypatch.setattr(
     data_tools,
     "create_run_directory",
@@ -278,8 +282,12 @@ def test_process_sans_data_returns_csv_only_when_explicitly_requested(
       ),
     }
 
+  async def run_inline(worker, *args, **_kwargs):
+    return worker(*args)
+
   monkeypatch.setattr(data_tools, "get_user_id_from_request", lambda: "user-1")
   monkeypatch.setattr(data_tools, "_process_sans_data", fake_process)
+  monkeypatch.setattr(data_tools, "run_cancellable_worker", run_inline)
   monkeypatch.setattr(data_tools, "create_run_directory", lambda _name: tmp_path)
   pipeline = DatasetPipeline(
     primary=UploadDataSource(kind="upload", file="sample.csv"),
