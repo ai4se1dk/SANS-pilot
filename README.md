@@ -24,6 +24,7 @@ analysis, powered by [SANS-fitter](https://github.com/ai4se1dk/SANS-fitter).
 | `inspect-sans-example`        | Inspect an example and its suggested configuration                 |
 | `simulate-sans-data`          | Generate synthetic data with known truth                           |
 | `simulate-sans-pair`          | Generate a matched sample/background pair                          |
+| `read-sans-artifact`          | Reopen a user-scoped image or chunked CSV/text artifact            |
 
 ## Data pipeline
 
@@ -241,11 +242,16 @@ loading. 2D SANS and SESANS are rejected with actionable messages.
 | Variable                          | Default                | Description                                                        |
 | --------------------------------- | ---------------------- | ------------------------------------------------------------------ |
 | `UPLOAD_DIR`                      | `/uploads`             | User-uploaded data directory                                       |
-| `SANS_PILOT_RUNS_DIR`             | `/tmp/sans-pilot-runs` | Internal workspace root for generated artifacts                    |
-| `SANS_PILOT_ARTIFACT_TTL_SECONDS` | `86400`                | Lifetime, in seconds, of artifact tokens in the in-memory registry |
+| `SANS_PILOT_RUNS_DIR`             | `/tmp/sans-pilot-runs` | Shared workspace root for artifacts and durable token manifests    |
+| `SANS_PILOT_ARTIFACT_TTL_SECONDS` | `86400`                | Artifact-token lifetime in seconds; `0` disables expiration         |
 | `SANS_PILOT_MAX_WORKERS`          | `2`                    | Maximum concurrent scientific worker processes                     |
 | `SANS_PILOT_TOOL_TIMEOUT_SECONDS` | `1800`                 | Hard execution timeout per worker; `0` disables it                  |
 | `API_TOKEN`                       | unset                  | Optional bearer token                                              |
+
+Artifact manifests are stored under `SANS_PILOT_RUNS_DIR/.registry`. When the
+runs directory is persistent and shared by all replicas, earlier artifacts can
+be reopened after process or pod restarts. `read-sans-artifact` returns images
+as MCP image content and CSV/text artifacts in bounded byte chunks.
 
 Long-running scientific calls execute in isolated worker processes. Cancelling
 the MCP request terminates the worker and removes its partial artifact

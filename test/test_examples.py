@@ -81,6 +81,7 @@ def test_simulation_tool_attaches_csv_only_when_service_returns_it(
   async def run_inline(worker, *args, **_kwargs):
     return worker(*args)
 
+  monkeypatch.setenv("SANS_PILOT_RUNS_DIR", str(tmp_path))
   monkeypatch.setattr(
     example_tools,
     "create_run_directory",

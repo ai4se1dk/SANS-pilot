@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastmcp import FastMCP
 from fastmcp.resources import ResourceContent, ResourceResult
 
+from sans_pilot.artifact_tools import register_artifact_tools
 from sans_pilot.artifacts import get_published_artifact
 from sans_pilot.auth import create_auth_verifier
 from sans_pilot.data_tools import register_data_tools
@@ -33,6 +34,7 @@ SANS (Small-Angle Neutron Scattering) data analysis server.
 10. `scan-sans-dmax` / `invert-sans-pr` - Explore Dmax and recover model-free P(r)
 11. `list-sans-examples` / `inspect-sans-example` - Discover curated teaching and validation datasets
 12. `simulate-sans-data` / `simulate-sans-pair` - Generate synthetic data with known truth
+13. `read-sans-artifact` - Reopen a user-scoped image or chunked text artifact from an earlier turn
 
 ## Tool Calling Rule
 - When the user refers to "my uploaded file(s)", "my data", or the "latest"/"recent" upload without giving an exact stored filename, you MUST call `list-uploaded-sans-files` before responding. Do not claim uploads cannot be listed and do not ask the user to reattach files unless that call returns no compatible files or fails.
@@ -62,6 +64,7 @@ register_model_tools(mcp)
 register_fit_tools(mcp)
 register_inversion_tools(mcp)
 register_example_tools(mcp)
+register_artifact_tools(mcp)
 
 
 @mcp.resource(

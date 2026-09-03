@@ -65,6 +65,7 @@ def test_fit_tool_returns_structured_summary_and_resource_links(tmp_path, monkey
   async def run_inline(worker, *args, **_kwargs):
     return worker(*args)
 
+  monkeypatch.setenv("SANS_PILOT_RUNS_DIR", str(tmp_path))
   monkeypatch.setattr(fit_tools, "get_user_id_from_request", lambda: "user-1")
   monkeypatch.setattr(fit_tools, "create_run_directory", lambda _name: tmp_path)
   monkeypatch.setattr(fit_tools, "run_typed_fit", fake_fit)

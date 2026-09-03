@@ -10,6 +10,7 @@ from fastmcp import Client
 from fastmcp.tools import ToolResult
 from mcp.types import ImageContent
 
+from sans_pilot import artifact_tools, artifacts
 from sans_pilot.artifacts import (
   artifact_result,
   publish_artifact,
@@ -17,7 +18,8 @@ from sans_pilot.artifacts import (
 )
 
 
-def test_images_are_inline_and_all_artifacts_have_lazy_uris(tmp_path):
+def test_images_are_inline_and_all_artifacts_have_lazy_uris(tmp_path, monkeypatch):
+  monkeypatch.setenv("SANS_PILOT_RUNS_DIR", str(tmp_path))
   image = tmp_path / "plot.png"
   image.write_bytes(b"png-bytes")
   summary = {
@@ -42,9 +44,53 @@ def test_images_are_inline_and_all_artifacts_have_lazy_uris(tmp_path):
     read_published_artifact(token, user_id="user-2")
 
 
-def test_artifact_can_be_read_through_mcp_resources(tmp_path):
+def test_zero_ttl_disables_artifact_token_expiration(tmp_path, monkeypatch):
+  monkeypatch.setenv("SANS_PILOT_RUNS_DIR", str(tmp_path))
+  artifact = tmp_path / "result.csv"
+  artifact.write_bytes(b"result")
+  clock = [100.0]
+  monkeypatch.setenv("SANS_PILOT_ARTIFACT_TTL_SECONDS", "0")
+  monkeypatch.setattr(artifacts.time, "monotonic", lambda: clock[0])
+
+  uri = publish_artifact(artifact, user_id="user-1")
+  token = uri.rsplit("/", 1)[-1]
+  clock[0] = 10_000_000.0
+
+  assert read_published_artifact(token, user_id="user-1") == b"result"
+
+
+def test_artifact_manifest_survives_memory_cache_loss(tmp_path, monkeypatch):
+  monkeypatch.setenv("SANS_PILOT_RUNS_DIR", str(tmp_path))
+  artifact = tmp_path / "result.csv"
+  artifact.write_bytes(b"persisted")
+  uri = publish_artifact(artifact, user_id="user-1")
+  artifacts._ARTIFACTS.clear()
+
+  assert read_published_artifact(uri, user_id="user-1") == b"persisted"
+
+
+def test_read_artifact_tool_returns_chunked_text(tmp_path, monkeypatch):
+  monkeypatch.setenv("SANS_PILOT_RUNS_DIR", str(tmp_path))
+  monkeypatch.setattr(artifact_tools, "get_user_id_from_request", lambda: "user-1")
+  csv = tmp_path / "result.csv"
+  csv.write_text("Q,I\n1,2\n3,4\n", encoding="utf-8")
+  uri = publish_artifact(csv, user_id="user-1")
+
+  first = artifact_tools.read_sans_artifact(uri, offset=0, limit=6)
+  second = artifact_tools.read_sans_artifact(
+    uri, offset=first["next_offset"], limit=100
+  )
+
+  assert first["text"] == "Q,I\n1,"
+  assert first["complete"] is False
+  assert second["complete"] is True
+  assert first["text"] + second["text"] == "Q,I\n1,2\n3,4\n"
+
+
+def test_artifact_can_be_read_through_mcp_resources(tmp_path, monkeypatch):
   from sans_pilot.main import mcp
 
+  monkeypatch.setenv("SANS_PILOT_RUNS_DIR", str(tmp_path))
   png = tmp_path / "plot.png"
   payload = b"\x89PNG\r\n\x1a\ncontent"
   png.write_bytes(payload)

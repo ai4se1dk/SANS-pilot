@@ -42,6 +42,7 @@ def test_typed_sans_tools_are_registered_and_legacy_tools_are_removed():
   assert "inspect-sans-example" in tool_names
   assert "simulate-sans-data" in tool_names
   assert "simulate-sans-pair" in tool_names
+  assert "read-sans-artifact" in tool_names
   assert "describe-possibilities" not in tool_names
   assert "list-uploaded-files" not in tool_names
   assert "get-model-parameters" not in tool_names
@@ -228,6 +229,7 @@ def test_plot_sans_data_returns_summary_and_image(tmp_path, monkeypatch):
   async def run_inline(worker, *args, **_kwargs):
     return worker(*args)
 
+  monkeypatch.setenv("SANS_PILOT_RUNS_DIR", str(tmp_path))
   monkeypatch.setattr(data_tools, "get_user_id_from_request", lambda: "user-1")
   monkeypatch.setattr(data_tools, "_render_data_only_plot", fake_render)
   monkeypatch.setattr(data_tools, "run_cancellable_worker", run_inline)
@@ -285,6 +287,7 @@ def test_process_sans_data_returns_csv_only_when_explicitly_requested(
   async def run_inline(worker, *args, **_kwargs):
     return worker(*args)
 
+  monkeypatch.setenv("SANS_PILOT_RUNS_DIR", str(tmp_path))
   monkeypatch.setattr(data_tools, "get_user_id_from_request", lambda: "user-1")
   monkeypatch.setattr(data_tools, "_process_sans_data", fake_process)
   monkeypatch.setattr(data_tools, "run_cancellable_worker", run_inline)
