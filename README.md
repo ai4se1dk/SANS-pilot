@@ -1,264 +1,281 @@
 # SANS-pilot
 
-MCP server for SANS (Small-Angle Neutron Scattering) data analysis, powered by [SANS-fitter](https://github.com/ai4se1dk/SANS-fitter).
+MCP server for reduced one-dimensional Small-Angle Neutron Scattering data
+analysis, powered by [SANS-fitter](https://github.com/ai4se1dk/SANS-fitter).
 
-## Tools
+## Scientific tools
 
-| Tool                              | Description                                                                  |
-| --------------------------------- | ---------------------------------------------------------------------------- |
-| `describe-possibilities`          | Describe server capabilities                                                 |
-| `list-sans-models`                | List available sasmodels for fitting (e.g., cylinder, sphere, ellipsoid)     |
-| `get-model-parameters`            | Get parameter specs for a model (value, min, max, vary, description)         |
-| `list-structure-factors`          | List available structure factors for inter-particle interactions             |
-| `get-structure-factor-parameters` | Get parameters for a form_factor@structure_factor product model              |
-| `get-polydisperse-parameters`     | Get parameters that support polydispersity for a model                       |
-| `get-polydispersity-options`      | Get available PD distribution types (gaussian, lognormal, etc.) and defaults |
-| `list-uploaded-files`             | List uploaded data files (optional: filter by extension, limit)              |
-| `inspect-sans-data`               | Inspect Q range, dI, dQ, and invalid points without fitting                  |
-| `plot-sans-data`                  | Plot measured SANS data without selecting or fitting a model                 |
-| `list-analyses`                   | List available analysis types with parameters                                |
-| `run-analysis`                    | Run optimization or Bayesian fitting and return results plus artifacts       |
+| Tool                          | Purpose                                                            |
+| ----------------------------- | ------------------------------------------------------------------ |
+| `describe-sans-capabilities`  | Describe supported workflows and scientific limitations            |
+| `list-supported-sans-formats` | List accepted reduced 1D community formats                         |
+| `list-uploaded-sans-files`    | List current-user uploads without exposing file contents           |
+| `inspect-sans-data`           | Inspect an upload, example, or simulation                          |
+| `plot-sans-data`              | Plot measured data without a model, fit curve, or residuals        |
+| `process-sans-data`           | Apply arithmetic/Q selection and return processed CSV data         |
+| `list-sans-models`            | List exact sasmodels names                                         |
+| `get-sans-model-parameters`   | Discover an exact atomic, interacting, or composite model contract |
+| `list-structure-factors`      | List supported inter-particle interaction models                   |
+| `get-polydispersity-options`  | List size-distribution types and defaults                          |
+| `fit-sans-model`              | Run optimization or Bayesian fitting through sans-fitter           |
+| `scan-sans-dmax`              | Explore Dmax using Rg, I(0), fit-quality, and positivity trends    |
+| `invert-sans-pr`              | Recover the model-free real-space pair distribution P(r)           |
+| `list-sans-examples`          | Discover curated measured and simulated datasets                   |
+| `inspect-sans-example`        | Inspect an example and its suggested configuration                 |
+| `simulate-sans-data`          | Generate synthetic data with known truth                           |
+| `simulate-sans-pair`          | Generate a matched sample/background pair                          |
+| `read-sans-artifact`          | Reopen a user-scoped image or chunked CSV/text artifact            |
 
-## Typical Workflow
+## Data pipeline
 
-1. **Find data**: Call `list-uploaded-files` to find your SANS data file.
-2. **Inspect data**: Call `inspect-sans-data` to check Q range, dI, and dQ.
-3. **Plot only**: Call `plot-sans-data` when the user wants to visualize measured data without fitting.
-4. **Fit when requested**: Discover a model and its parameters, then call `run-analysis`.
+All data tools use a typed `pipeline`. The primary source may be a user upload,
+a bundled example, or a simulation:
 
-### Example: Plot data without fitting
+```json
+{ "primary": { "kind": "upload", "file": "stored-data-name.xml" } }
+```
 
-Call `plot-sans-data` directly when the user asks to inspect a dataset visually
-without a model, fitted curve, or residuals:
+```json
+{ "primary": { "kind": "example", "name": "protein" } }
+```
 
 ```json
 {
-  "input_file": "simulated_sans_data.csv",
+  "primary": {
+    "kind": "simulation",
+    "model": "sphere",
+    "parameters": { "radius": 50 },
+    "seed": 42
+  }
+}
+```
+
+Optional `auxiliary` sources and ordered `operations` support `add`,
+`subtract`, `multiply`, and `divide` with another dataset or a scalar. Optional
+`q_min` and `q_max` select the active scientific range. Arithmetic behavior,
+including uncertainty, unit, and resolution propagation, is provided directly
+by `sans-fitter`.
+
+### Plot without fitting
+
+```json
+{
+  "pipeline": {
+    "primary": { "kind": "upload", "file": "simulated_sans_data.csv" }
+  },
   "log_scale": true
 }
 ```
 
-The response contains a compact data summary and `sans_data_plot.png`. The plot
-shows measured intensity and available dI/dQ error bars only. Set `log_scale` to
-`false` to use linear axes.
+`plot-sans-data` returns metadata, an inline MCP image for immediate display,
+and a lazy resource URI for `sans_data_plot.png`; it never selects a model or
+performs a fit.
 
-### Example: Fitting cylinder model
+## Model discovery and fitting
+
+Call `get-sans-model-parameters` with the exact model specification you intend
+to fit. It returns parameter names, defaults, bounds, polydispersity support,
+component aliases, and links reported by the configured sans-fitter model.
+
+### Atomic model fit
+
+`fit-sans-model` accepts one `request` object:
 
 ```json
 {
-  "name": "fitting-with-custom-model",
-  "parameters": {
-    "input_file": "simulated_sans_data.csv",
-    "model": "cylinder",
-    "engine": "bumps",
-    "method": "amoeba",
-    "param_overrides": {
+  "request": {
+    "pipeline": {
+      "primary": { "kind": "upload", "file": "simulated_sans_data.csv" },
+      "q_min": 0.01,
+      "q_max": 0.3
+    },
+    "model": { "kind": "atomic", "model": "cylinder" },
+    "parameters": {
       "radius": { "value": 20, "min": 1, "max": 200, "vary": true },
       "length": { "value": 400, "min": 10, "max": 4000, "vary": true },
-      "scale": { "value": 1.0, "min": 0.0, "max": 10, "vary": true },
+      "scale": { "value": 1, "min": 0, "max": 10, "vary": true },
       "background": { "value": 0.001, "min": 0, "max": 1, "vary": true }
-    }
-  }
-}
-```
-
-### Example: Fitting with polydispersity
-
-Use `get-polydisperse-parameters` to see which parameters support size distributions, then add a `polydispersity` config:
-
-```json
-{
-  "name": "fitting-with-custom-model",
-  "parameters": {
-    "input_file": "simulated_sans_data.csv",
-    "model": "cylinder",
-    "engine": "bumps",
-    "method": "amoeba",
-    "param_overrides": {
-      "radius": { "value": 20, "min": 1, "max": 200, "vary": true },
-      "length": { "value": 400, "min": 10, "max": 4000, "vary": true },
-      "scale": { "value": 1.0, "vary": true },
-      "background": { "value": 0.001, "vary": true }
     },
-    "polydispersity": {
-      "radius": {
-        "pd_width": 0.1,
-        "pd_type": "gaussian",
-        "pd_n": 10,
-        "vary": false
-      }
-    }
+    "fit": { "mode": "optimization", "engine": "bumps", "method": "amoeba" }
   }
 }
 ```
 
-**Polydispersity options:**
-- `pd_width`: Relative width (0.1 = 10% polydispersity)
-- `pd_type`: Distribution shape (`gaussian`, `lognormal`, `schulz`, `rectangle`, `boltzmann`)
-- `pd_n`: Number of quadrature points (higher = more accurate, slower)
-- `pd_nsigma`: Number of standard deviations to include
-- `vary`: Whether to fit the pd_width during optimization
+The selected engine and method are passed directly to `sans-fitter`. Fit
+objectives, uncertainties, optimizer status, warnings, and errors retain their
+`sans-fitter` meanings and are not reinterpreted by the MCP server.
 
-### Example: Fitting with structure factors
+### Structure factor and polydispersity
 
-Structure factors model inter-particle interactions in concentrated systems. Use `list-structure-factors` to see available options:
-
-- `hardsphere` - Hard sphere (Percus-Yevick closure)
-- `hayter_msa` - Hayter-Penfold MSA for charged spheres
-- `squarewell` - Square well potential
-- `stickyhardsphere` - Sticky hard sphere (Baxter model)
+An interacting atomic model puts the structure factor in the model object;
+its parameters use the same `parameters` map:
 
 ```json
 {
-  "name": "fitting-with-custom-model",
-  "parameters": {
-    "input_file": "simulated_sans_data.csv",
+  "model": {
+    "kind": "atomic",
     "model": "sphere",
-    "engine": "bumps",
-    "method": "amoeba",
-    "param_overrides": {
-      "radius": { "value": 50, "min": 10, "max": 100, "vary": true },
-      "scale": { "value": 0.01, "vary": true },
-      "background": { "value": 0.001, "vary": true }
-    },
     "structure_factor": "hardsphere",
-    "structure_factor_params": {
-      "volfraction": { "value": 0.2, "min": 0.0, "max": 0.6, "vary": true },
-      "radius_effective": { "value": 50, "min": 10, "max": 100, "vary": true }
+    "radius_effective_mode": "link_radius"
+  },
+  "polydispersity": {
+    "radius": {
+      "pd_width": 0.1,
+      "pd_type": "gaussian",
+      "pd_n": 35,
+      "pd_nsigma": 3,
+      "vary": false
     }
   }
 }
 ```
 
-**Structure factor options:**
-- `structure_factor`: Name of the structure factor
-- `structure_factor_params`: Parameter overrides (volfraction, radius_effective, charge for hayter_msa)
-- `radius_effective_mode`: `"unconstrained"` (default) or `"link_radius"` to constrain radius_effective to equal the form factor radius
+Supported structure factors are `hardsphere`, `hayter_msa`, `squarewell`, and
+`stickyhardsphere`. Supported distributions are `gaussian`, `rectangle`,
+`lognormal`, `schulz`, and `boltzmann`.
 
-### Q range and Q resolution
+### Composite model
 
-Use `q_min` and `q_max` to restrict the fitted range without editing the data.
-If the input contains a dQ column, `sans-fitter` automatically applies the
-resolution and includes it in the fit plot and `fit_results.csv`.
+Composite models combine uniquely named components. `shared_parameters` and
+`parameter_links` configure the equality mechanisms provided by sans-fitter.
 
 ```json
 {
-  "q_min": 0.01,
-  "q_max": 0.3
+  "kind": "composite",
+  "operation": "+",
+  "components": [
+    { "alias": "small", "model": "sphere" },
+    { "alias": "long", "model": "cylinder" }
+  ],
+  "shared_parameters": ["sld", "sld_solvent"],
+  "parameter_links": {}
 }
 ```
 
-### Background subtraction and scaling
+Composite models and parameter links require BUMPS point-estimate fitting.
+Additive component curves are included in the fit plot by default.
 
-Use an ordered preprocessing pipeline. Auxiliary operands reference aliases,
-so their uploaded filenames are resolved and isolated by the server.
+### Bayesian fit
 
 ```json
 {
-  "input_file": "sample.csv",
-  "auxiliary_files": {
-    "background": "empty_cell.csv"
+  "fit": {
+    "mode": "bayesian",
+    "samples": 5000,
+    "burn": 200,
+    "thin": 1,
+    "pop": 10
   },
-  "data_operations": [
-    { "operation": "subtract", "operand": "background" },
-    { "operation": "divide", "scalar": 0.8 }
-  ]
+  "artifacts": {
+    "posterior_plots": ["predictive", "pairs", "trace"],
+    "include_posterior_chain": false
+  }
 }
 ```
 
-Supported operations are `add`, `subtract`, `multiply`, and `divide`.
+Bayesian fitting uses the BUMPS DREAM integration provided by `sans-fitter`.
+The compact response serializes the posterior summary and diagnostics returned
+by `sans-fitter`; raw samples are not placed in model context.
 
-### Bayesian fitting
+Every fit returns compact structured JSON, inline MCP image content for plots,
+and lazy MCP resource URIs for all generated files. Atomic fits include a URI
+for `sasview_parameter_values.txt` by default. CSV and text artifact bytes are
+not included in the original tool response. `fit_results.csv` and
+`posterior_chain.csv` are generated only when explicitly requested. Resource
+URIs are opaque and user-scoped; non-image artifacts remain lazy so their
+contents do not consume model context.
 
-Set `fit_type` to `bayesian` to sample parameter posteriors with BUMPS DREAM.
-The MCP response contains compact credible intervals and diagnostics. Raw
-samples are returned as `posterior_chain.csv`, not placed in model context.
+## Model-free P(r) inversion
+
+`scan-sans-dmax` exposes sans-fitter's Dmax exploration. The scan returns
+arrays for Rg, I(0), data chi-squared, oscillations, positivity, background,
+and alpha plus `dmax_scan.png`. Sans-fitter documents a good Dmax as showing an
+Rg/I(0) plateau and a minimum in the data chi-squared.
+
+`invert-sans-pr` supports automatic selection of basis terms and regularization
+or a manual mode that requires both `n_terms` and `alpha`:
 
 ```json
 {
-  "fit_type": "bayesian",
-  "engine": "bumps",
-  "method": "dream",
-  "samples": 5000,
-  "burn": 200,
-  "thin": 1,
-  "pop": 10,
-  "posterior_plots": ["predictive", "pairs", "trace"],
-  "include_posterior_chain": true
+  "request": {
+    "pipeline": { "primary": { "kind": "example", "name": "protein" } },
+    "d_max": 120,
+    "selection": { "mode": "automatic" },
+    "fit_background": false,
+    "regularizer": "corrected",
+    "include_pr_csv": false,
+    "plot_log_scale": false
+  }
 }
 ```
 
-Every fit returns compact JSON, `fit_plot.png`, and
-`sasview_parameter_values.txt`. The server always generates
-`fit_results.csv`, but only attaches its full numerical table when
-`include_fit_results_file` is true. Bayesian fits return selected posterior
-plots and attach the raw chain only when `include_posterior_chain` is true.
+The result includes Dmax, Rg, I(0), background treatment, data chi-squared,
+effective degrees of freedom, oscillations, positivity fractions, matrix
+condition/rank diagnostics, and whether uncertainties were fabricated. It
+returns P(r) and I(Q)/residual plots; numerical P(r) CSV is opt-in. Pinhole dQ
+is ignored and slit smearing is unsupported by sans-fitter 0.3 inversion.
 
-## Authentication
+Buffer-subtracted protein data normally uses `fit_background=false` because a
+fitted flat background can absorb I(0) and bias Rg.
 
-Set `API_TOKEN` environment variable to enable bearer token authentication:
+## Curated examples and simulation
+
+`list-sans-examples` can filter by tag and returns descriptions, suggested
+models and parameters, structure factors, polydispersity, and caveats.
+`inspect-sans-example` loads live metadata. Measured examples have
+`known_truth=null`; suggested values are starting points, not results.
+
+`simulate-sans-data` and `simulate-sans-pair` pass simulation settings to
+`sans-fitter`; set an explicit seed when reproducible output is required. They
+return generation truth separately from any later fitted estimate. The pair
+tool produces independent noise on one shared Q grid, suitable for subtraction
+tests. Plots are returned by default and CSV files only when requested.
+
+## Supported data scope
+
+The server accepts reduced 1D columnar text, NIST/SasView ASCII, CanSAS XML,
+NXcanSAS/HDF5, and Anton Paar PDH data. Containers are type-checked after
+loading. 2D SANS and SESANS are rejected with actionable messages.
+
+## Configuration
+
+| Variable                          | Default                | Description                                                        |
+| --------------------------------- | ---------------------- | ------------------------------------------------------------------ |
+| `UPLOAD_DIR`                      | `/uploads`             | User-uploaded data directory                                       |
+| `SANS_PILOT_RUNS_DIR`             | `/tmp/sans-pilot-runs` | Shared workspace root for artifacts and durable token manifests    |
+| `SANS_PILOT_ARTIFACT_TTL_SECONDS` | `86400`                | Artifact-token lifetime in seconds; `0` disables expiration         |
+| `SANS_PILOT_MAX_WORKERS`          | `2`                    | Maximum concurrent scientific worker processes                     |
+| `SANS_PILOT_TOOL_TIMEOUT_SECONDS` | `1800`                 | Hard execution timeout per worker; `0` disables it                  |
+| `API_TOKEN`                       | unset                  | Optional bearer token                                              |
+
+Artifact manifests are stored under `SANS_PILOT_RUNS_DIR/.registry`. When the
+runs directory is persistent and shared by all replicas, earlier artifacts can
+be reopened after process or pod restarts. `read-sans-artifact` returns images
+as MCP image content and CSV/text artifacts in bounded byte chunks.
+
+Long-running scientific calls execute in isolated worker processes. Cancelling
+the MCP request terminates the worker and removes its partial artifact
+workspace. The hard tool timeout provides cleanup when a client does not
+propagate cancellation.
+
+## Local development
 
 ```bash
-API_TOKEN="your-secret-token" sans-pilot
-```
-
-Clients must include `Authorization: Bearer <token>` header. If `API_TOKEN` is not set, authentication is disabled.
-
-## Analyses
-
-Analyses are auto-discovered from `src/sans_pilot/analyses/`. Each analysis module exports:
-- `ANALYSIS_DESCRIPTION` — shown by `list-analyses`
-- `run(**parameters)` — called by `run-analysis`
-
-## Environment Variables
-
-| Variable              | Default                | Description                         |
-| --------------------- | ---------------------- | ----------------------------------- |
-| `UPLOAD_DIR`          | `/uploads`             | Directory for uploaded data files   |
-| `SANS_PILOT_RUNS_DIR` | `/tmp/sans-pilot-runs` | Output directory for analysis runs  |
-| `API_TOKEN`           | (none)                 | Bearer token for API authentication |
-
-## Running locally
-
-```bash
-cd sans-pilot
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
 sans-pilot
 ```
 
-## Docker
-
 ```bash
 docker build -f Dockerfile.dev -t sans-pilot .
 docker run -p 8001:8001 -e API_TOKEN="your-token" sans-pilot
 ```
 
-## Testing
-
-Mount a local data file into `/uploads`:
+Run automated checks with:
 
 ```bash
-docker run -p 8001:8001 \
-	-v /path/to/simulated_sans_data.csv:/uploads/simulated_sans_data.csv \
-	sans-pilot
+ruff check src test
+pyright
+pytest
 ```
-
-Run the test script to verify all MCP endpoints:
-
-```bash
-cd test
-./test_endpoints.sh
-```
-
-The script tests all tools against a running server at `http://localhost:8001`. Pass a different URL as argument if needed:
-
-```bash
-./test_endpoints.sh http://localhost:9000
-```
-
-## Notes
-
-Future improvements planned:
-- Run scripts in a separate container for security and isolation

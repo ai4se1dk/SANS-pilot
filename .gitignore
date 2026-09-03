@@ -216,3 +216,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 .DS_Store
+
+# Generated manual MCP evaluation reports
+evals/reports/*.md
+!evals/reports/.gitkeep
