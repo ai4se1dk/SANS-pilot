@@ -171,9 +171,7 @@ def test_read_artifact_tool_returns_chunked_text(tmp_path, monkeypatch):
   )
 
   assert first["text"] == "Q,I\n1,"
-  assert first["download_url"].startswith(
-    "https://chat.example/api/sans-artifacts/"
-  )
+  assert first["download_url"].startswith("https://chat.example/api/sans-artifacts/")
   assert first["complete"] is False
   assert second["complete"] is True
   assert first["text"] + second["text"] == "Q,I\n1,2\n3,4\n"
