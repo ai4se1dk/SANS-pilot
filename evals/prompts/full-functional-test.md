@@ -47,12 +47,13 @@ Test the following areas:
 
 - Plot one uploaded dataset without fitting.
 - Verify that the result remains an MCP tool result.
-- Verify that the tool result contains artifact metadata with `name`, `mime_type`, and a lazy `sans-pilot://artifact/<token>` URI.
+- Verify that the tool result contains artifact metadata with `name`, `mime_type`, `bytes`, a lazy internal `sans-pilot://artifact/<token>` URI, and a signed browser `download_url`.
 - Verify that generated PNG plots are also returned as MCP image content and display automatically in the chat.
-- CSV and text artifacts must remain lazy and must not be inlined.
-- Call `read-sans-artifact` with one returned image URI and confirm that it returns valid MCP image content.
-- Treat artifact URIs as internal MCP references. Do not render them as clickable user download links and do not paste encoded image data into the conversation.
-- Retain at least one image URI for the persistence checks near the end of this test.
+- CSV and text artifact contents must remain lazy and must not be inlined.
+- Call `read-sans-artifact` with one returned image URI and confirm that it returns valid MCP image content and the same `download_url`.
+- Treat `sans-pilot://` artifact URIs as internal MCP references and never render them as browser links. Present the returned `download_url` as a Markdown link labelled with the artifact name; do not invent, rewrite, or decode it, and do not paste encoded image data into the conversation.
+- Ask the operator to click the PNG link and confirm the downloaded filename and image content. Record this browser check as `pending` until the operator responds.
+- Retain at least one image URI and download URL for the persistence checks near the end of this test.
 
 4. Processing
 
@@ -61,9 +62,10 @@ Test the following areas:
 - If two compatible datasets are available, test subtraction and division.
 - Report the units, dI, dQ, warnings, and preprocessing provenance exactly as returned.
 - Do not impose your own unit, covariance, or resolution-propagation rules.
-- Request one processed CSV and verify that its artifact metadata contains a lazy `sans-pilot://artifact/<token>` URI without inlining the CSV contents.
-- Call `read-sans-artifact` with the CSV URI and a deliberately small `limit`. Verify `offset`, `bytes_returned`, `next_offset`, and `complete`; continue from `next_offset` and confirm that chunks can be reconstructed in order.
-- Retain the CSV URI for the persistence checks near the end of this test.
+- Request one processed CSV and verify that its artifact metadata contains `bytes`, a lazy internal `sans-pilot://artifact/<token>` URI, and a browser `download_url` without inlining the CSV contents.
+- Call `read-sans-artifact` with the CSV URI and a deliberately small `limit`. Verify `offset`, `bytes_returned`, `next_offset`, `complete`, and that the same `download_url` is returned; continue from `next_offset` and confirm that chunks can be reconstructed in order.
+- Present the CSV `download_url` as a filename-labelled Markdown link. Ask the operator to confirm that it downloads with the expected filename and CSV header, or report the browser check as `pending`.
+- Retain the CSV URI and download URL for the persistence checks near the end of this test.
 
 5. Model discovery
 
@@ -144,12 +146,13 @@ Test the following areas:
 - State that cancellation requires a separate operator-assisted test: start a deliberately long fit, click Stop while it is running, then verify from server logs and process metrics that the scientific worker process terminates promptly and its partial workspace is removed.
 - Distinguish cancellation of a running worker from cancellation while waiting for a worker slot.
 
-14. Persistent artifact behavior
+14. Persistent artifact and browser-download behavior
 
-- Near the end of the test, call `read-sans-artifact` again with the image and CSV URIs retained from earlier sections. Confirm that both still resolve after intervening tool calls.
-- Confirm that artifact access remains user-scoped; do not attempt to inspect another user's artifacts.
-- State that process/pod-restart persistence requires a separate operator-assisted test: retain an artifact URI, restart the sans-pilot container or Kubernetes deployment, start a new turn as the same user, and call `read-sans-artifact` with the retained URI.
-- In Kubernetes, also verify that an artifact created before a replica restart can be read afterward, demonstrating that both the file and token manifest are on shared persistent storage.
+- Near the end of the test, call `read-sans-artifact` again with the image and CSV URIs retained from earlier sections. Confirm that both still resolve after intervening tool calls and return browser download URLs byte-for-byte identical to the originals.
+- Confirm that MCP artifact access remains user-scoped; do not attempt to inspect another user's artifacts. Note that browser download URLs are non-expiring bearer capabilities in the first implementation.
+- Ask the operator to alter one signature character and one filename path component, once each, and confirm that neither modified URL returns an artifact. Do not paste modified URLs into the report.
+- State that process/pod-restart persistence requires a separate operator-assisted test: retain the artifact URIs and browser links, restart the sans-pilot container or Kubernetes deployment without rotating `SANS_PILOT_DOWNLOAD_SIGNING_KEY`, start a new turn as the same user, call `read-sans-artifact` with the retained URIs, and click the original browser links.
+- In Kubernetes, verify that an artifact created before a replica restart can still be read and downloaded afterward, demonstrating that the file and token manifest are on shared persistent storage and the signing key is stable.
 - Do not request or perform automatic artifact deletion. Report storage persistence separately from client chat-history retention.
 
 Produce a concise final report containing:
@@ -159,10 +162,10 @@ Produce a concise final report containing:
 - failed functionality;
 - exact reproducible requests for failures;
 - explicit error origin, or `unknown` when the response does not identify it;
-- artifact URI, `read-sans-artifact`, chunking, and persistence behavior;
+- internal artifact URI, `read-sans-artifact`, browser-download link, chunking, tamper rejection, and persistence behavior;
 - concurrency and worker-queue results;
 - whether the separate operator-assisted cancellation and restart-persistence tests are still required;
 - scientific caveats exactly as returned by `sans-fitter`;
 - a prioritized issue list.
 
-Do not treat different optimizer objective values as equivalent unless the returned metadata explicitly establishes the same normalization. Do not modify uploaded data or add scientific conclusions that are not present in the returned results or documented by `sans-fitter`.
+Do not treat different optimizer objective values as equivalent unless the returned metadata explicitly establishes the same normalization. Do not modify uploaded data or add scientific conclusions that are not present in the returned results or documented by `sans-fitter`. Redact complete download URLs, signatures, artifact tokens, user identifiers, and internal service addresses from any saved report.

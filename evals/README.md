@@ -10,7 +10,8 @@ pytest suite under `test/`; they are not deterministic unit tests.
 evals/
 ├── prompts/
 │   ├── full-functional-test.md
-│   └── artifact-persistence-test.md
+│   ├── artifact-persistence-test.md
+│   └── artifact-download-link-test.md
 └── reports/
     └── .gitkeep
 ```
@@ -22,6 +23,8 @@ evals/
   concurrency, and the operator-assisted cancellation checklist.
 - `prompts/artifact-persistence-test.md` focuses on inline images, chunked
   CSV/text reads, user-scoped artifact access, and restart persistence.
+- `prompts/artifact-download-link-test.md` focuses on signed browser links,
+  client downloads, tamper rejection, stable links, and restart persistence.
 
 Run prompts in a new chat after rebuilding/restarting the MCP deployment and
 refreshing LibreChat's MCP tool catalog. Tests that require stopping a running

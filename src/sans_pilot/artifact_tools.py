@@ -11,7 +11,7 @@ from fastmcp.utilities.types import Image
 from mcp.types import TextContent
 from pydantic import Field
 
-from sans_pilot.artifacts import get_published_artifact
+from sans_pilot.artifacts import artifact_download_url, get_published_artifact
 from sans_pilot.files import get_user_id_from_request
 
 
@@ -29,6 +29,9 @@ def read_sans_artifact(
     "mime_type": artifact.mime_type,
     "bytes": size,
   }
+  download_url = artifact_download_url(uri)
+  if download_url is not None:
+    metadata["download_url"] = download_url
 
   if artifact.mime_type.startswith("image/"):
     text = json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True)
@@ -69,7 +72,7 @@ def register_artifact_tools(mcp: FastMCP) -> None:
       "Read a user-scoped artifact URI returned by an earlier sans-pilot call. "
       "Images are returned as image content. CSV/text artifacts are returned in "
       "bounded chunks using byte offset and limit. Use this for follow-up analysis "
-      "of artifacts from prior conversation turns; do not expose internal URIs as "
-      "user download links."
+      "of artifacts from prior conversation turns. Internal artifact URIs are for "
+      "tool use; return the provided download_url when the user needs a browser link."
     ),
   )(read_sans_artifact)

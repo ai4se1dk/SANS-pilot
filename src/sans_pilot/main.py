@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from fastmcp import FastMCP
 from fastmcp.resources import ResourceContent, ResourceResult
+from starlette.requests import Request
+from starlette.responses import FileResponse, PlainTextResponse, Response
 
 from sans_pilot.artifact_tools import register_artifact_tools
-from sans_pilot.artifacts import get_published_artifact
+from sans_pilot.artifacts import get_downloadable_artifact, get_published_artifact
 from sans_pilot.auth import create_auth_verifier
 from sans_pilot.data_tools import register_data_tools
 from sans_pilot.example_tools import register_example_tools
@@ -43,6 +45,7 @@ SANS (Small-Angle Neutron Scattering) data analysis server.
 - Use `pipeline.primary.kind="upload"` for user files, `"example"` for curated datasets, or `"simulation"` for synthetic data
 - Never put uploaded file contents into the tool request; pass only the stored filename from `list-uploaded-sans-files`
 - Never guess a model or parameter name; use the exact output of `list-sans-models` and `get-sans-model-parameters`
+- Present returned `download_url` values as user-facing links; keep `sans-pilot://artifact/` URIs internal for `read-sans-artifact`
 
 ## Key Tools
 - `list-structure-factors` - For concentrated samples with particle interactions
@@ -65,6 +68,38 @@ register_fit_tools(mcp)
 register_inversion_tools(mcp)
 register_example_tools(mcp)
 register_artifact_tools(mcp)
+
+
+@mcp.custom_route(
+  "/api/sans-artifacts/{token}/{filename}",
+  methods=["GET"],
+  include_in_schema=False,
+)
+async def download_sans_artifact(request: Request) -> Response:
+  """Serve a generated artifact through a signed browser-download URL."""
+  signature = request.query_params.get("signature", "")
+  try:
+    artifact = get_downloadable_artifact(
+      request.path_params["token"],
+      filename=request.path_params["filename"],
+      signature=signature,
+    )
+  except RuntimeError:
+    return PlainTextResponse("Artifact downloads are not configured.", status_code=503)
+  except (FileNotFoundError, PermissionError, ValueError):
+    return PlainTextResponse("Artifact not found.", status_code=404)
+
+  return FileResponse(
+    artifact.path,
+    filename=artifact.path.name,
+    media_type=artifact.mime_type,
+    content_disposition_type="attachment",
+    headers={
+      "Cache-Control": "private, no-store",
+      "Referrer-Policy": "no-referrer",
+      "X-Content-Type-Options": "nosniff",
+    },
+  )
 
 
 @mcp.resource(

@@ -178,12 +178,13 @@ The compact response serializes the posterior summary and diagnostics returned
 by `sans-fitter`; raw samples are not placed in model context.
 
 Every fit returns compact structured JSON, inline MCP image content for plots,
-and lazy MCP resource URIs for all generated files. Atomic fits include a URI
-for `sasview_parameter_values.txt` by default. CSV and text artifact bytes are
-not included in the original tool response. `fit_results.csv` and
-`posterior_chain.csv` are generated only when explicitly requested. Resource
-URIs are opaque and user-scoped; non-image artifacts remain lazy so their
-contents do not consume model context.
+and lazy MCP resource URIs for all generated files. When browser downloads are
+configured, artifact metadata also includes a signed `download_url`. Atomic
+fits include links for `sasview_parameter_values.txt` by default. CSV and text
+artifact bytes are not included in the original tool response. `fit_results.csv`
+and `posterior_chain.csv` are generated only when explicitly requested. MCP
+resource URIs are opaque and user-scoped; non-image artifacts remain lazy so
+their contents do not consume model context.
 
 ## Model-free P(r) inversion
 
@@ -244,6 +245,8 @@ loading. 2D SANS and SESANS are rejected with actionable messages.
 | `UPLOAD_DIR`                      | `/uploads`             | User-uploaded data directory                                       |
 | `SANS_PILOT_RUNS_DIR`             | `/tmp/sans-pilot-runs` | Shared workspace root for artifacts and durable token manifests    |
 | `SANS_PILOT_ARTIFACT_TTL_SECONDS` | `86400`                | Artifact-token lifetime in seconds; `0` disables expiration         |
+| `SANS_PILOT_PUBLIC_BASE_URL`      | unset                  | Public HTTP(S) URL or absolute path for browser artifact downloads  |
+| `SANS_PILOT_DOWNLOAD_SIGNING_KEY` | unset                  | Secret used to sign browser artifact download capabilities          |
 | `SANS_PILOT_MAX_WORKERS`          | `2`                    | Maximum concurrent scientific worker processes                     |
 | `SANS_PILOT_TOOL_TIMEOUT_SECONDS` | `1800`                 | Hard execution timeout per worker; `0` disables it                  |
 | `API_TOKEN`                       | unset                  | Optional bearer token                                              |
@@ -252,6 +255,13 @@ Artifact manifests are stored under `SANS_PILOT_RUNS_DIR/.registry`. When the
 runs directory is persistent and shared by all replicas, earlier artifacts can
 be reopened after process or pod restarts. `read-sans-artifact` returns images
 as MCP image content and CSV/text artifacts in bounded byte chunks.
+
+When both download settings are configured, artifact metadata includes a
+non-expiring, HMAC-signed `download_url`. The URL remains valid while the
+artifact exists and the signing key is unchanged. It is a bearer capability:
+anyone who obtains the URL can download the artifact, so it must not be logged
+or shared unintentionally. A future version should add configurable link
+expiration.
 
 Long-running scientific calls execute in isolated worker processes. Cancelling
 the MCP request terminates the worker and removes its partial artifact

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import mimetypes
 import os
@@ -12,6 +14,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlsplit
 
 from fastmcp.tools import ToolResult
 from fastmcp.utilities.types import Image
@@ -52,6 +55,50 @@ def _artifact_ttl_seconds() -> float:
     return max(float(raw_value), 0.0)
   except ValueError:
     return 86400.0
+
+
+def _download_signing_key() -> bytes:
+  value = os.environ.get("SANS_PILOT_DOWNLOAD_SIGNING_KEY")
+  if not value:
+    raise RuntimeError(
+      "SANS_PILOT_DOWNLOAD_SIGNING_KEY is required for artifact downloads."
+    )
+  return value.encode("utf-8")
+
+
+def _public_download_base_url() -> str | None:
+  value = os.environ.get("SANS_PILOT_PUBLIC_BASE_URL", "").strip().rstrip("/")
+  if not value:
+    return None
+
+  parsed = urlsplit(value)
+  is_relative = value.startswith("/") and not value.startswith("//")
+  is_http = parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+  if not is_relative and not is_http:
+    raise ValueError(
+      "SANS_PILOT_PUBLIC_BASE_URL must be an HTTP(S) URL or an absolute path."
+    )
+  return value
+
+
+def _download_signature(token: str, artifact: PublishedArtifact) -> str:
+  payload = "\0".join(
+    ("v1", token, artifact.user_id or "", artifact.path.name)
+  ).encode()
+  return hmac.new(_download_signing_key(), payload, hashlib.sha256).hexdigest()
+
+
+# TODO: Add configurable expiration to browser download URLs.
+def artifact_download_url(uri_or_token: str) -> str | None:
+  """Return a stable signed browser URL when public downloads are configured."""
+  base_url = _public_download_base_url()
+  if base_url is None or not os.environ.get("SANS_PILOT_DOWNLOAD_SIGNING_KEY"):
+    return None
+  token = artifact_token(uri_or_token)
+  artifact = _resolve_published_artifact(token)
+  signature = _download_signature(token, artifact)
+  filename = quote(artifact.path.name, safe="")
+  return f"{base_url}/{token}/{filename}?signature={signature}"
 
 
 def _is_expired(artifact: PublishedArtifact, now: float) -> bool:
@@ -156,10 +203,8 @@ def publish_artifact(path: str | Path, *, user_id: str | None) -> str:
   return f"sans-pilot://artifact/{token}"
 
 
-def get_published_artifact(
-  uri_or_token: str, *, user_id: str | None
-) -> PublishedArtifact:
-  """Resolve a durable artifact after enforcing expiry and ownership."""
+def _resolve_published_artifact(uri_or_token: str) -> PublishedArtifact:
+  """Resolve a durable artifact without granting access to its contents."""
   token = artifact_token(uri_or_token)
   now = time.time()
   with _ARTIFACT_LOCK:
@@ -172,8 +217,30 @@ def get_published_artifact(
 
   if artifact is None or _is_expired(artifact, now) or not artifact.path.is_file():
     raise FileNotFoundError("Artifact was not found or has expired.")
+  return artifact
+
+
+def get_published_artifact(
+  uri_or_token: str, *, user_id: str | None
+) -> PublishedArtifact:
+  """Resolve a durable artifact after enforcing expiry and ownership."""
+  artifact = _resolve_published_artifact(uri_or_token)
   if artifact.user_id is not None and artifact.user_id != user_id:
     raise PermissionError("Artifact does not belong to the current user.")
+  return artifact
+
+
+def get_downloadable_artifact(
+  token: str, *, filename: str, signature: str
+) -> PublishedArtifact:
+  """Resolve an artifact after validating its browser-download capability."""
+  normalized_token = artifact_token(token)
+  artifact = _resolve_published_artifact(normalized_token)
+  if filename != artifact.path.name:
+    raise PermissionError("Invalid artifact download capability.")
+  expected = _download_signature(normalized_token, artifact)
+  if not hmac.compare_digest(signature, expected):
+    raise PermissionError("Invalid artifact download capability.")
   return artifact
 
 
@@ -193,8 +260,18 @@ def artifact_result(
     name: publish_artifact(path, user_id=user_id) for name, path in artifacts.items()
   }
   for metadata in summary.get("artifacts", []):
-    if isinstance(metadata, dict) and metadata.get("name") in uri_by_name:
-      metadata["uri"] = uri_by_name[metadata["name"]]
+    if not isinstance(metadata, dict):
+      continue
+    name = metadata.get("name")
+    path = artifacts.get(name) if isinstance(name, str) else None
+    uri = uri_by_name.get(name) if isinstance(name, str) else None
+    if path is None or uri is None:
+      continue
+    metadata["uri"] = uri
+    metadata["bytes"] = path.stat().st_size
+    download_url = artifact_download_url(uri)
+    if download_url is not None:
+      metadata["download_url"] = download_url
 
   image_paths = [path for path in artifacts.values() if path.suffix.lower() == ".png"]
   if not image_paths:
